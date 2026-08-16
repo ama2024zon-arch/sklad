@@ -1,0 +1,1047 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сборка поставки</title>
+<style>
+  :root {
+    --bg: #E6E7E3;
+    --panel: #FBFBF9;
+    --panel-2: #F1F1EC;
+    --ink: #171A18;
+    --muted: #666B65;
+    --line: #CDCFC8;
+    --line-strong: #B2B6AC;
+    --accent: #9C4A16;
+    --accent-ink: #FFF7F1;
+    --accent-soft: #F1E1D3;
+    --ok: #2E5F4E;
+    --ok-soft: #DEE9E3;
+    --warn: #855F10;
+    --warn-soft: #F2E7CC;
+    --radius: 4px;
+    --sans: ui-sans-serif, "Segoe UI Variable Display", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", "SF Mono", "Roboto Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141613; --panel: #1D201C; --panel-2: #252822; --ink: #E9EBE4; --muted: #979C92;
+      --line: #31352F; --line-strong: #474C43; --accent: #E1894C; --accent-ink: #17190F;
+      --accent-soft: #382718; --ok: #79B79B; --ok-soft: #1F2E27; --warn: #D6A951; --warn-soft: #2F2817;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #141613; --panel: #1D201C; --panel-2: #252822; --ink: #E9EBE4; --muted: #979C92;
+    --line: #31352F; --line-strong: #474C43; --accent: #E1894C; --accent-ink: #17190F;
+    --accent-soft: #382718; --ok: #79B79B; --ok-soft: #1F2E27; --warn: #D6A951; --warn-soft: #2F2817;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 780px; margin: 0 auto; padding: 22px 16px 60px; display: flex; flex-direction: column; gap: 18px; }
+
+  h1 { margin: 0; font-size: clamp(21px, 4.5vw, 27px); font-weight: 620; letter-spacing: -.02em; }
+  .sub { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+  .drop {
+    display: grid; place-items: center; gap: 6px; padding: 20px 14px; text-align: center;
+    background: var(--panel); border: 2px dashed var(--line-strong); border-radius: var(--radius); cursor: pointer;
+  }
+  .drop:hover, .drop:focus-visible { border-color: var(--accent); background: var(--panel-2); }
+  .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop.done { border-style: solid; border-color: var(--ok); background: var(--ok-soft); }
+  .drop .t { font-weight: 600; font-size: 15.5px; }
+  .drop .h { color: var(--muted); font-size: 13px; }
+  .drop .f { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+
+  .files { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .files { grid-template-columns: 1fr; } }
+
+  button {
+    font: inherit; font-size: 15px; font-weight: 550; padding: 11px 16px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); cursor: pointer;
+  }
+  button:hover { background: var(--panel-2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[disabled] { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.big { font-size: 17px; padding: 15px 18px; width: 100%; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > button { flex: 1 1 200px; }
+
+  label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-family: var(--mono); }
+  input, select {
+    font: inherit; font-size: 17px; padding: 12px 13px; border: 1px solid var(--line-strong);
+    border-radius: var(--radius); background: var(--panel); color: var(--ink); width: 100%;
+  }
+  input[readonly] { background: var(--panel-2); color: var(--muted); }
+  input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  input.scan { font-family: var(--mono); font-size: 19px; letter-spacing: .02em; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .scanline { display: flex; gap: 8px; align-items: flex-end; }
+  .scanline label { flex: 1; }
+  .scanline button { padding: 12px 14px; font-size: 18px; line-height: 1; }
+
+  .headline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius); }
+  .headline .big-num { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+  .headline .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .headline .shk { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+
+  .found { font-size: 14.5px; padding: 9px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); min-height: 42px; display: flex; align-items: center; gap: 8px; }
+  .found.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .found.no { border-color: var(--warn); background: var(--warn-soft); }
+  .found b { font-family: var(--mono); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 13px; display: flex; flex-direction: column; gap: 2px; }
+  .tile .l { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .tile .v { font-family: var(--mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+  .list-scroll { max-height: 44vh; overflow: auto; }
+  .item { display: grid; grid-template-columns: 42px 1fr auto 34px; gap: 8px; align-items: center; padding: 9px 11px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 13.5px; }
+  .item:last-child { border-bottom: 0; }
+  .item .n { color: var(--muted); }
+  .item .a { overflow-wrap: anywhere; }
+  .item .a small { display: block; color: var(--muted); font-size: 11.5px; }
+  .item .q { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .item.bad { background: var(--warn-soft); }
+  .item button { padding: 4px 8px; font-size: 13px; border-radius: 3px; }
+
+  .msg { padding: 11px 13px; border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--radius); background: var(--panel); font-size: 14.5px; }
+  .msg.err { border-left-color: var(--accent); background: var(--accent-soft); }
+  .msg.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .msg.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .msg strong { display: block; margin-bottom: 2px; }
+
+  #cam { position: fixed; inset: 0; background: #000; z-index: 50; display: flex; flex-direction: column; }
+  #cam video { flex: 1; width: 100%; object-fit: cover; }
+  #cam .bar { padding: 12px; background: #000; display: flex; justify-content: center; }
+  #cam .aim { position: absolute; left: 10%; right: 10%; top: 38%; height: 22%; border: 3px solid #E1894C; border-radius: 6px; pointer-events: none; }
+
+  details.how { border-top: 1px solid var(--line); padding-top: 14px; }
+  details.how summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.how .body { padding-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; }
+  details.how ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+  details.how code { font-family: var(--mono); font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; }
+
+  .hidden { display: none !important; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Сборка поставки</h1>
+    <p class="sub" id="subtitle">Заполняет лист «Состав ГМ поставки»: сканируем коробки, инструмент подставляет артикул и собирает файл для Ozon.</p>
+  </header>
+
+  <div id="message" class="hidden" role="status" aria-live="polite"></div>
+
+  <!-- ЭКРАН 1: загрузка файлов (компьютер) -->
+  <section id="screenLoad">
+    <div class="files">
+      <div class="drop" id="drop1" tabindex="0" role="button">
+        <span class="lbl" style="font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)">Файл №1</span>
+        <span class="t">Выгрузка товаров</span>
+        <span class="h" id="hint1">products_export - штрихкоды и артикулы</span>
+        <span class="f" id="name1"></span>
+      </div>
+      <div class="drop" id="drop2" tabindex="0" role="button">
+        <span class="lbl" style="font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)">Файл №2</span>
+        <span class="t">Шаблон поставки</span>
+        <span class="h" id="hint2">файл Ozon с листами «Состав ГМ поставки» и «Список транспортного ГМ»</span>
+        <span class="f" id="name2"></span>
+      </div>
+    </div>
+    <input id="file1" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
+    <input id="file2" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
+
+    <div id="loadSummary" class="card hidden" style="margin-top:14px">
+      <div class="tiles">
+        <div class="tile"><span class="l">Товаров</span><span class="v" id="sumGoods">0</span></div>
+        <div class="tile"><span class="l">Коробок</span><span class="v" id="sumBoxes">0</span></div>
+        <div class="tile"><span class="l">Паллет</span><span class="v" id="sumPallets">0</span></div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="goScan">Сканировать здесь</button>
+        <button type="button" id="goPack">Собрать для телефона</button>
+      </div>
+      <button type="button" id="goList1" class="hidden">Заполнить из Лист1 (ручная перепись)</button>
+    </div>
+  </section>
+
+  <!-- ЭКРАН 2: сканирование -->
+  <section id="screenScan" class="hidden">
+    <div class="headline">
+      <div>
+        <div class="lbl">Паллет</div>
+        <div class="big-num" id="palletNo">1</div>
+        <div class="shk" id="palletShk"></div>
+      </div>
+      <div style="text-align:right">
+        <div class="lbl">Коробка по порядку</div>
+        <div class="big-num" id="boxNo">1</div>
+        <div class="shk" id="boxShk"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid2">
+        <label>Номер паллеты
+          <input id="palletInput" type="number" min="1" step="1" value="1" inputmode="numeric">
+        </label>
+        <label>Номер коробки
+          <input id="boxInput" type="text" readonly value="1">
+        </label>
+      </div>
+
+      <div class="scanline">
+        <label>ШК товара с коробки
+          <input id="shkInput" class="scan" type="text" autocomplete="off" placeholder="отсканируйте или введите">
+        </label>
+        <button type="button" id="camBtn" title="Сканировать камерой">📷</button>
+      </div>
+
+      <div class="found" id="foundBox">Ждём штрихкод</div>
+
+      <label>Количество в коробке
+        <input id="qtyInput" type="number" min="1" step="1" inputmode="numeric" placeholder="введите количество">
+      </label>
+
+      <button type="button" class="primary big" id="addBtn">Добавить коробку</button>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><span class="l">Коробок внесено</span><span class="v" id="cntBoxes">0</span></div>
+      <div class="tile"><span class="l">Всего штук</span><span class="v" id="cntUnits">0</span></div>
+      <div class="tile"><span class="l">Осталось коробок</span><span class="v" id="cntLeft">0</span></div>
+    </div>
+
+    <div class="list">
+      <div class="list-scroll" id="listBox"></div>
+    </div>
+
+    <div class="row">
+      <button type="button" class="primary" id="saveBtn">Сохранить файл для Ozon</button>
+      <button type="button" id="shareBtn" class="hidden">Отправить файл</button>
+      <button type="button" id="undoBtn">Отменить последнюю</button>
+    </div>
+    <button type="button" id="goList1Scan" class="hidden">Заполнить из Лист1 (ручная перепись)</button>
+    <button type="button" id="backBtn">Загрузить другие файлы</button>
+  </section>
+
+  <details class="how">
+    <summary>Как этим пользоваться</summary>
+    <div class="body">
+      <ol>
+        <li>На компьютере загрузите файл №1 (выгрузка товаров) и файл №2 (шаблон поставки от Ozon).</li>
+        <li>Нажмите «Собрать для телефона» - скачается один файл. Отправьте его себе в мессенджер и откройте на телефоне: данные уже внутри, интернет не нужен.</li>
+        <li>На телефоне поставьте номер паллеты - он держится, пока не смените. Сканируйте коробки одну за другой и вводите количество.</li>
+        <li>Когда паллета собрана, поменяйте номер паллеты и продолжайте - нумерация коробок идёт сквозная.</li>
+        <li>«Сохранить файл для Ozon» - получится тот же файл №2, но с заполненными столбцами: ШК товара, артикул, количество и ШК паллеты.</li>
+      </ol>
+      <p style="margin:0">Если коробки уже переписаны вручную в Лист1 в формате <code>номер=артикул=количество</code>, файл заполняется кнопкой «Заполнить из Лист1» - сканировать ничего не нужно.</p>
+    </div>
+  </details>
+</div>
+
+<div id="cam" class="hidden">
+  <video id="camVideo" playsinline muted></video>
+  <div class="aim"></div>
+  <div class="bar"><button type="button" id="camClose">Закрыть камеру</button></div>
+</div>
+
+<script>
+  (function () {
+    "use strict";
+
+    var ready = false;
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { ready = true; });
+    else ready = true;
+
+    var el = function (id) { return document.getElementById(id); };
+
+    var pack = null;      // {catalog, boxes, pallets, sheet, file2, file2Name, list1}
+    var rows = [];        // [{shk, art, qty, pallet}]
+    var raw1 = null, raw2 = null;
+    var camStream = null, camStop = false;
+
+    /* ================= чтение xlsx ================= */
+
+    function readZip(buffer) {
+      var u8 = new Uint8Array(buffer), dv = new DataView(buffer), eocd = -1;
+      for (var i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) {
+        if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) throw new Error("Это не файл Excel (.xlsx).");
+      var count = dv.getUint16(eocd + 10, true), off = dv.getUint32(eocd + 16, true);
+      var dec = new TextDecoder("utf-8"), files = {}, order = [];
+      for (var n = 0; n < count; n++) {
+        if (dv.getUint32(off, true) !== 0x02014b50) break;
+        var method = dv.getUint16(off + 10, true);
+        var compSize = dv.getUint32(off + 20, true);
+        var nameLen = dv.getUint16(off + 28, true);
+        var extraLen = dv.getUint16(off + 30, true);
+        var commentLen = dv.getUint16(off + 32, true);
+        var localOff = dv.getUint32(off + 42, true);
+        var name = dec.decode(u8.subarray(off + 46, off + 46 + nameLen));
+        files[name] = { method: method, compSize: compSize, localOff: localOff };
+        order.push(name);
+        off += 46 + nameLen + extraLen + commentLen;
+      }
+      return { u8: u8, dv: dv, files: files, order: order };
+    }
+
+    function entryBytes(zip, name) {
+      var f = zip.files[name];
+      if (!f) return Promise.resolve(null);
+      var lo = f.localOff;
+      if (zip.dv.getUint32(lo, true) !== 0x04034b50) return Promise.reject(new Error("Файл Excel повреждён."));
+      var start = lo + 30 + zip.dv.getUint16(lo + 26, true) + zip.dv.getUint16(lo + 28, true);
+      var raw = zip.u8.subarray(start, start + f.compSize);
+      if (f.method === 0) return Promise.resolve(new Uint8Array(raw));
+      if (f.method !== 8) return Promise.reject(new Error("Неизвестное сжатие внутри файла."));
+      if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("Браузер не умеет распаковывать .xlsx - откройте в Chrome или Edge."));
+      return new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw")))
+        .arrayBuffer().then(function (b) { return new Uint8Array(b); });
+    }
+
+    function entryText(zip, name) {
+      return entryBytes(zip, name).then(function (b) { return b ? new TextDecoder("utf-8").decode(b) : null; });
+    }
+
+    function parseXml(text, what) {
+      var doc = new DOMParser().parseFromString(text, "application/xml");
+      if (doc.getElementsByTagName("parsererror").length) throw new Error("Не читается " + what + " внутри файла.");
+      return doc;
+    }
+
+    function sharedStrings(text) {
+      if (!text) return [];
+      var doc = parseXml(text, "список текстов"), items = doc.getElementsByTagName("si"), out = [];
+      for (var i = 0; i < items.length; i++) {
+        var ts = items[i].getElementsByTagName("t"), s = "";
+        for (var j = 0; j < ts.length; j++) {
+          if (ts[j].parentNode && ts[j].parentNode.nodeName === "rPh") continue;
+          s += ts[j].textContent;
+        }
+        out.push(s);
+      }
+      return out;
+    }
+
+    function colIndex(ref) {
+      var n = 0;
+      for (var i = 0; i < ref.length; i++) {
+        var c = ref.charCodeAt(i);
+        if (c < 65 || c > 90) break;
+        n = n * 26 + (c - 64);
+      }
+      return n;
+    }
+
+    function colName(n) {
+      var s = "";
+      while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+      return s;
+    }
+
+    /** карта листов: имя -> путь в архиве */
+    function sheetMap(zip, workbookXml, relsXml) {
+      var map = {};
+      try {
+        var wb = parseXml(workbookXml, "список листов");
+        var rels = parseXml(relsXml, "связи").getElementsByTagName("Relationship");
+        var byId = {};
+        for (var i = 0; i < rels.length; i++) byId[rels[i].getAttribute("Id")] = rels[i].getAttribute("Target");
+        var sheets = wb.getElementsByTagName("sheet");
+        for (var j = 0; j < sheets.length; j++) {
+          var rid = sheets[j].getAttribute("r:id") || sheets[j].getAttribute("id");
+          var target = (byId[rid] || "").replace(/^\/?xl\//, "").replace(/^\//, "");
+          if (target) map[sheets[j].getAttribute("name")] = "xl/" + target;
+        }
+      } catch (e) { /* ниже запасной путь */ }
+      if (!Object.keys(map).length) {
+        var first = Object.keys(zip.files).filter(function (n) { return /^xl\/worksheets\/sheet\d*\.xml$/.test(n); }).sort()[0];
+        if (first) map["Лист1"] = first;
+      }
+      return map;
+    }
+
+    /** значения листа: {rows: {r: {c: {v, num}}}, maxRow, maxCol} */
+    function readSheet(text, shared) {
+      var doc = parseXml(text, "лист"), out = { rows: {}, maxRow: 0, maxCol: 0 };
+      var rowNodes = doc.getElementsByTagName("row");
+      for (var i = 0; i < rowNodes.length; i++) {
+        var rn = parseInt(rowNodes[i].getAttribute("r"), 10) || (i + 1);
+        var cells = {}, cNodes = rowNodes[i].getElementsByTagName("c"), any = false;
+        for (var j = 0; j < cNodes.length; j++) {
+          var c = cNodes[j], col = colIndex(c.getAttribute("r") || "");
+          if (!col) continue;
+          var t = c.getAttribute("t"), val = null, isNum = false;
+          if (t === "inlineStr") {
+            var is = c.getElementsByTagName("is")[0];
+            val = is ? is.textContent : null;
+          } else {
+            var v = c.getElementsByTagName("v")[0];
+            if (v) {
+              if (t === "s") { val = shared[parseInt(v.textContent, 10)]; if (val === undefined) val = ""; }
+              else if (t === "str" || t === "e") { val = v.textContent; }
+              else { val = v.textContent; isNum = /^-?\d+(\.\d+)?$/.test(val); }
+            }
+          }
+          if (val !== null && String(val).trim() !== "") {
+            cells[col] = { v: String(val), num: isNum };
+            if (col > out.maxCol) out.maxCol = col;
+            any = true;
+          }
+        }
+        if (any) { out.rows[rn] = cells; if (rn > out.maxRow) out.maxRow = rn; }
+      }
+      return out;
+    }
+
+    function cellText(sheet, r, c) {
+      var row = sheet.rows[r];
+      return row && row[c] ? row[c].v : "";
+    }
+
+    /* ================= запись xlsx ================= */
+
+    var crcTable = null;
+    function crc32(bytes) {
+      if (!crcTable) {
+        crcTable = new Uint32Array(256);
+        for (var i = 0; i < 256; i++) {
+          var c = i;
+          for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          crcTable[i] = c >>> 0;
+        }
+      }
+      var crc = 0xFFFFFFFF;
+      for (var n = 0; n < bytes.length; n++) crc = crcTable[(crc ^ bytes[n]) & 0xFF] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function zipStore(entries) {
+      var enc = new TextEncoder(), d = new Date();
+      var dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
+      var dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+      var parts = [], central = [], offset = 0;
+      entries.forEach(function (e) {
+        var name = enc.encode(e.name);
+        var data = e.bytes || enc.encode(e.text || "");
+        var crc = crc32(data);
+        var local = new Uint8Array(30 + name.length), lv = new DataView(local.buffer);
+        lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+        lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+        lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+        lv.setUint16(26, name.length, true);
+        local.set(name, 30);
+        var head = new Uint8Array(46 + name.length), hv = new DataView(head.buffer);
+        hv.setUint32(0, 0x02014b50, true); hv.setUint16(4, 20, true); hv.setUint16(6, 20, true);
+        hv.setUint16(8, 0x0800, true); hv.setUint16(12, dosTime, true); hv.setUint16(14, dosDate, true);
+        hv.setUint32(16, crc, true); hv.setUint32(20, data.length, true); hv.setUint32(24, data.length, true);
+        hv.setUint16(28, name.length, true); hv.setUint32(42, offset, true);
+        head.set(name, 46);
+        parts.push(local, data); central.push(head);
+        offset += local.length + data.length;
+      });
+      var centralSize = central.reduce(function (s, c) { return s + c.length; }, 0);
+      var end = new Uint8Array(22), ev = new DataView(end.buffer);
+      ev.setUint32(0, 0x06054b50, true);
+      ev.setUint16(8, central.length, true); ev.setUint16(10, central.length, true);
+      ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
+      return new Blob(parts.concat(central, [end]), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    }
+
+    function xmlEscape(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c];
+      });
+    }
+
+    /** лист целиком заново: значения из sheet + правки patch[row][col] = {v, num} */
+    function buildSheetXml(sheet, patch) {
+      var rowsIdx = {};
+      Object.keys(sheet.rows).forEach(function (r) { rowsIdx[r] = true; });
+      Object.keys(patch).forEach(function (r) { rowsIdx[r] = true; });
+      var nums = Object.keys(rowsIdx).map(Number).sort(function (a, b) { return a - b; });
+      var maxCol = sheet.maxCol;
+      nums.forEach(function (r) {
+        var p = patch[r];
+        if (p) Object.keys(p).forEach(function (c) { if (+c > maxCol) maxCol = +c; });
+      });
+
+      var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+      nums.forEach(function (r) {
+        var base = sheet.rows[r] || {}, p = patch[r] || {}, out = "";
+        for (var c = 1; c <= maxCol; c++) {
+          var cell = (c in p) ? p[c] : base[c];
+          if (!cell || cell.v === null || cell.v === undefined || cell.v === "") continue;
+          var ref = colName(c) + r;
+          if (cell.num) out += '<c r="' + ref + '"><v>' + xmlEscape(cell.v) + '</v></c>';
+          else out += '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(cell.v) + '</t></is></c>';
+        }
+        if (out) xml += '<row r="' + r + '">' + out + '</row>';
+      });
+      return xml + '</sheetData></worksheet>';
+    }
+
+    /** пересобирает исходный файл №2, заменив один лист */
+    function rebuildFile2(bytes, sheetPath, sheet, patch) {
+      var zip = readZip(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      var names = zip.order.slice();
+      return Promise.all(names.map(function (n) {
+        return n === sheetPath ? Promise.resolve(null) : entryBytes(zip, n);
+      })).then(function (list) {
+        var entries = names.map(function (n, i) {
+          return n === sheetPath ? { name: n, text: buildSheetXml(sheet, patch) } : { name: n, bytes: list[i] };
+        });
+        return zipStore(entries);
+      });
+    }
+
+    function saveBlob(blob, filename) {
+      var url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = filename; a.style.display = "none";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+
+    function b64encode(bytes) {
+      var s = "", chunk = 0x8000;
+      for (var i = 0; i < bytes.length; i += chunk) s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      return btoa(s);
+    }
+
+    function b64decode(str) {
+      var bin = atob(str), out = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+
+    /* ================= разбор загруженных файлов ================= */
+
+    function loadFile1(file) {
+      return file.arrayBuffer().then(function (buf) {
+        var zip = readZip(buf);
+        return Promise.all([entryText(zip, "xl/sharedStrings.xml"), entryText(zip, "xl/workbook.xml"), entryText(zip, "xl/_rels/workbook.xml.rels")])
+          .then(function (p) {
+            var map = sheetMap(zip, p[1], p[2]);
+            var path = map["Товарный состав"] || map[Object.keys(map)[0]];
+            return entryText(zip, path).then(function (xml) {
+              var sheet = readSheet(xml, sharedStrings(p[0]));
+              var byBar = {}, byArt = {}, goods = 0;
+              for (var r = 2; r <= sheet.maxRow; r++) {
+                var art = cellText(sheet, r, 1), bar = cellText(sheet, r, 5), name = cellText(sheet, r, 2);
+                if (!art) continue;
+                goods++;
+                var rec = { art: art, bar: bar, name: name };
+                if (bar) byBar[bar.trim().toLowerCase()] = rec;
+                byArt[art.trim().toLowerCase().replace(/\s/g, "")] = rec;
+              }
+              return { byBar: byBar, byArt: byArt, goods: goods };
+            });
+          });
+      });
+    }
+
+    function loadFile2(file) {
+      return file.arrayBuffer().then(function (buf) {
+        var bytes = new Uint8Array(buf);
+        var zip = readZip(buf);
+        return Promise.all([entryText(zip, "xl/sharedStrings.xml"), entryText(zip, "xl/workbook.xml"), entryText(zip, "xl/_rels/workbook.xml.rels")])
+          .then(function (p) {
+            var shared = sharedStrings(p[0]), map = sheetMap(zip, p[1], p[2]);
+            var gmPath = map["Состав ГМ поставки"];
+            var palPath = map["Список транспортного ГМ"];
+            var l1Path = map["Лист1"] || map["Лист 1"];
+            if (!gmPath) throw new Error("В файле нет листа «Состав ГМ поставки».");
+            if (!palPath) throw new Error("В файле нет листа «Список транспортного ГМ».");
+            return Promise.all([entryText(zip, gmPath), entryText(zip, palPath), l1Path ? entryText(zip, l1Path) : null])
+              .then(function (x) {
+                var gm = readSheet(x[0], shared), pal = readSheet(x[1], shared);
+                var boxes = [];
+                for (var r = 2; r <= gm.maxRow; r++) {
+                  var shk = cellText(gm, r, 6);
+                  if (shk) boxes.push(shk);
+                }
+                var pallets = [];
+                for (var pr = 2; pr <= pal.maxRow; pr++) {
+                  var v = cellText(pal, pr, 1);
+                  if (v) pallets.push(v);
+                }
+                var list1 = x[2] ? parseList1(readSheet(x[2], shared)) : [];
+                return {
+                  bytes: bytes, name: file.name, gmPath: gmPath, gm: gm,
+                  boxes: boxes, pallets: pallets, list1: list1
+                };
+              });
+          });
+      });
+    }
+
+    /** Лист1: строки «номер=артикул=количество» + маркеры «---Паллет №N---» */
+    function parseList1(sheet) {
+      var out = [], pallet = 1;
+      for (var r = 1; r <= sheet.maxRow; r++) {
+        var row = sheet.rows[r];
+        if (!row) continue;
+        var text = "";
+        for (var c = 1; c <= sheet.maxCol; c++) {
+          if (row[c] && row[c].v) { text = row[c].v; }
+        }
+        text = String(text).trim();
+        if (!text) continue;
+        if (text.indexOf("=") < 0) {
+          var m = text.match(/№\s*(\d+)/);
+          if (m && text.toLowerCase().indexOf("конец") < 0) pallet = parseInt(m[1], 10);
+          continue;
+        }
+        var parts = text.split("=");
+        out.push({
+          num: parts[0].trim(),
+          art: (parts[1] || "").trim(),
+          qty: (parts[2] || "").trim(),
+          pallet: pallet
+        });
+      }
+      return out;
+    }
+
+    /* ================= экраны ================= */
+
+    function showMessage(kind, title, text) {
+      var box = el("message");
+      if (!kind) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+      box.className = "msg " + kind;
+      box.innerHTML = "<strong>" + xmlEscape(title) + "</strong>" + xmlEscape(text || "");
+      box.classList.remove("hidden");
+      box.scrollIntoView({ block: "nearest" });
+    }
+
+    function screen(which) {
+      el("screenLoad").classList.toggle("hidden", which !== "load");
+      el("screenScan").classList.toggle("hidden", which !== "scan");
+      if (which === "scan") {
+        var has = pack && pack.list1 && pack.list1.length;
+        el("goList1Scan").classList.toggle("hidden", !has);
+        if (has) el("goList1Scan").textContent = "Заполнить из Лист1 (" + pack.list1.length + " коробок)";
+      }
+    }
+
+    function checkReady() {
+      if (!raw1 || !raw2) return;
+      pack = {
+        catalog: raw1, boxes: raw2.boxes, pallets: raw2.pallets, list1: raw2.list1,
+        file2: raw2.bytes, file2Name: raw2.name, gmPath: raw2.gmPath, gm: raw2.gm
+      };
+      el("sumGoods").textContent = raw1.goods;
+      el("sumBoxes").textContent = raw2.boxes.length;
+      el("sumPallets").textContent = raw2.pallets.length;
+      el("loadSummary").classList.remove("hidden");
+      el("goList1").classList.toggle("hidden", !(raw2.list1 && raw2.list1.length));
+      if (raw2.list1 && raw2.list1.length) {
+        el("goList1").textContent = "Заполнить из Лист1 (" + raw2.list1.length + " коробок)";
+      }
+    }
+
+    /* ================= сканирование ================= */
+
+    function currentPallet() {
+      var n = parseInt(el("palletInput").value, 10);
+      return isNaN(n) || n < 1 ? 1 : n;
+    }
+
+    function palletShk(n) {
+      return pack.pallets[n - 1] || "";
+    }
+
+    function refreshHead() {
+      var p = currentPallet(), n = rows.length + 1;
+      el("palletNo").textContent = p;
+      var shk = palletShk(p);
+      el("palletShk").textContent = shk || "нет такой паллеты в файле";
+      el("boxNo").textContent = n;
+      el("boxInput").value = n;
+      el("boxShk").textContent = pack.boxes[n - 1] || "ШК коробки закончились";
+    }
+
+    function lookup(code) {
+      if (!code) return null;
+      return pack.catalog.byBar[String(code).trim().toLowerCase()] || null;
+    }
+
+    function refreshFound() {
+      var code = el("shkInput").value.trim(), box = el("foundBox");
+      if (!code) { box.className = "found"; box.textContent = "Ждём штрихкод"; return; }
+      var hit = lookup(code);
+      if (hit) {
+        box.className = "found ok";
+        box.innerHTML = "<b>" + xmlEscape(hit.art) + "</b> " + xmlEscape(hit.name.slice(0, 70));
+      } else {
+        box.className = "found no";
+        box.textContent = "Товар с таким ШК не найден - строка запишется без артикула";
+      }
+    }
+
+    function renderList() {
+      var box = el("listBox"), html = "";
+      for (var i = rows.length - 1; i >= 0; i--) {
+        var r = rows[i];
+        html += '<div class="item' + (r.art ? "" : " bad") + '">' +
+          '<span class="n">' + (i + 1) + '</span>' +
+          '<span class="a">' + xmlEscape(r.art || "без артикула") + '<small>' + xmlEscape(r.shk) + ' · паллет ' + r.pallet + '</small></span>' +
+          '<span class="q">' + r.qty + '</span>' +
+          '<button type="button" data-del="' + i + '" title="Удалить">✕</button></div>';
+      }
+      box.innerHTML = html || '<div style="padding:16px;color:var(--muted);font-size:14px">Пока пусто - отсканируйте первую коробку</div>';
+      var units = rows.reduce(function (s, r) { return s + (Number(r.qty) || 0); }, 0);
+      el("cntBoxes").textContent = rows.length;
+      el("cntUnits").textContent = units;
+      el("cntLeft").textContent = Math.max(0, pack.boxes.length - rows.length);
+      refreshHead();
+      saveProgress();
+    }
+
+    function addRow() {
+      var shk = el("shkInput").value.trim();
+      var qty = parseInt(el("qtyInput").value, 10);
+      if (!shk) { showMessage("warn", "Нет штрихкода", "Отсканируйте коробку или введите ШК вручную."); el("shkInput").focus(); return; }
+      if (!qty || qty < 1) { showMessage("warn", "Нет количества", "Введите, сколько штук в этой коробке."); el("qtyInput").focus(); return; }
+      if (rows.length >= pack.boxes.length) { showMessage("err", "Коробки закончились", "В файле " + pack.boxes.length + " штрихкодов коробок - больше внести нельзя."); return; }
+      var p = currentPallet();
+      if (!palletShk(p)) { showMessage("err", "Нет такой паллеты", "В файле только " + pack.pallets.length + " паллет. Проверьте номер."); return; }
+      var hit = lookup(shk);
+      rows.push({ shk: shk, art: hit ? hit.art : "", qty: qty, pallet: p });
+      showMessage(null);
+      el("shkInput").value = "";
+      el("qtyInput").value = "";
+      refreshFound();
+      renderList();
+      beep();
+      focusScan();
+    }
+
+    // на телефоне не выдёргиваем клавиатуру сами: ввод идёт сканером или по тапу
+    function focusScan() {
+      if (window.innerWidth > 700) el("shkInput").focus();
+    }
+
+    function beep() {
+      try {
+        if (navigator.vibrate) navigator.vibrate(40);
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.frequency.value = 880; gain.gain.value = 0.07;
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.08);
+        setTimeout(function () { ctx.close(); }, 300);
+      } catch (e) { /* без звука */ }
+    }
+
+    /* ---- прогресс в памяти браузера ---- */
+
+    function progressKey() {
+      return "supply-scan:" + (pack ? pack.file2Name : "");
+    }
+
+    function saveProgress() {
+      try { localStorage.setItem(progressKey(), JSON.stringify({ rows: rows, pallet: currentPallet() })); } catch (e) { }
+    }
+
+    function loadProgress() {
+      try {
+        var s = localStorage.getItem(progressKey());
+        if (!s) return false;
+        var d = JSON.parse(s);
+        if (d && d.rows && d.rows.length) {
+          rows = d.rows;
+          el("palletInput").value = d.pallet || 1;
+          return true;
+        }
+      } catch (e) { }
+      return false;
+    }
+
+    /* ---- камера ---- */
+
+    function openCamera() {
+      if (typeof BarcodeDetector === "undefined") {
+        showMessage("warn", "Здесь камера штрихкод не читает", "На айфоне браузер этого не умеет. Нажмите и подержите поле «ШК товара», выберите «Сканировать текст» и наведите камеру на цифры под штрихкодом. Либо используйте сканер-пистолет - он печатает код прямо в поле.");
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showMessage("warn", "Нет доступа к камере", "Откройте файл через Chrome. Если камера не появится - вводите ШК вручную.");
+        return;
+      }
+      el("cam").classList.remove("hidden");
+      camStop = false;
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } }).then(function (stream) {
+        camStream = stream;
+        var v = el("camVideo");
+        v.srcObject = stream;
+        return v.play().then(function () {
+          var det = new BarcodeDetector();
+          var tick = function () {
+            if (camStop) return;
+            det.detect(v).then(function (codes) {
+              if (codes && codes.length) {
+                el("shkInput").value = codes[0].rawValue;
+                refreshFound();
+                closeCamera();
+                beep();
+                el("qtyInput").focus();
+              } else if (!camStop) {
+                requestAnimationFrame(tick);
+              }
+            })["catch"](function () { if (!camStop) setTimeout(tick, 300); });
+          };
+          tick();
+        });
+      })["catch"](function () {
+        closeCamera();
+        showMessage("warn", "Камера не открылась", "Разрешите доступ к камере или введите ШК вручную.");
+      });
+    }
+
+    function closeCamera() {
+      camStop = true;
+      el("cam").classList.add("hidden");
+      if (camStream) {
+        camStream.getTracks().forEach(function (t) { t.stop(); });
+        camStream = null;
+      }
+    }
+
+    /* ================= сохранение результата ================= */
+
+    function buildPatch(list) {
+      var patch = {}, problems = [];
+      list.forEach(function (r, i) {
+        var row = 2 + i;
+        patch[row] = {};
+        patch[row][1] = { v: r.shk || "", num: false };
+        patch[row][2] = { v: r.art || "", num: false };
+        patch[row][3] = { v: String(r.qty || ""), num: !!r.qty };
+        patch[row][8] = { v: palletShk(r.pallet) || "", num: false };
+        if (!r.art) problems.push("коробка " + (i + 1) + ": не определён артикул");
+        if (!r.qty) problems.push("коробка " + (i + 1) + ": нет количества");
+      });
+      return { patch: patch, problems: problems };
+    }
+
+    /** телефон часто не даёт скачать файл - тогда отдаём его через «Поделиться» */
+    function canShareFiles() {
+      try {
+        return !!(navigator.canShare && navigator.share &&
+          navigator.canShare({ files: [new File(["1"], "t.txt", { type: "text/plain" })] }));
+      } catch (e) { return false; }
+    }
+
+    function saveResult(viaShare) {
+      if (!rows.length) { showMessage("warn", "Пока нечего сохранять", "Внесите хотя бы одну коробку."); return; }
+      var built = buildPatch(rows);
+      el("saveBtn").disabled = true;
+      el("shareBtn").disabled = true;
+      rebuildFile2(pack.file2, pack.gmPath, pack.gm, built.patch).then(function (blob) {
+        var fname = pack.file2Name.replace(/\.xlsx$/i, "") + "_заполнен.xlsx";
+        if (viaShare) {
+          var file = new File([blob], fname, { type: blob.type });
+          navigator.share({ files: [file], title: fname })["catch"](function () { saveBlob(blob, fname); });
+        } else {
+          saveBlob(blob, fname);
+        }
+        var extra = pack.boxes.length - rows.length;
+        var tail = extra > 0 ? " Коробок без содержимого осталось: " + extra + " - удалите лишние строки в кабинете." : "";
+        if (built.problems.length) {
+          showMessage("warn", "Файл сохранён, но есть вопросы", built.problems.slice(0, 5).join("; ") +
+            (built.problems.length > 5 ? " и ещё " + (built.problems.length - 5) : "") + "." + tail);
+        } else {
+          showMessage("ok", "Файл готов", "Внесено коробок: " + rows.length + "." + tail);
+        }
+        el("saveBtn").disabled = false;
+        el("shareBtn").disabled = false;
+      })["catch"](function (err) {
+        showMessage("err", "Файл не собрался", (err && err.message) || "Неизвестная ошибка.");
+        el("saveBtn").disabled = false;
+        el("shareBtn").disabled = false;
+      });
+    }
+
+    /* ---- заполнение из Лист1 ---- */
+
+    function fillFromList1() {
+      if (rows.length && !window.confirm("Уже внесено коробок: " + rows.length + ". Заменить их данными из Лист1?")) return;
+      var miss = [];
+      rows = pack.list1.map(function (rec) {
+        var key = rec.art.toLowerCase().replace(/\s/g, "");
+        var hit = pack.catalog.byArt[key];
+        if (!hit) miss.push(rec.num + "=" + rec.art);
+        return {
+          shk: hit ? hit.bar : "",
+          art: hit ? hit.art : rec.art,
+          qty: /^\d+$/.test(rec.qty) ? parseInt(rec.qty, 10) : "",
+          pallet: rec.pallet
+        };
+      });
+      screen("scan");
+      renderList();
+      var noQty = rows.filter(function (r) { return !r.qty; }).length;
+      var parts = ["Перенесено коробок: " + rows.length + "."];
+      if (miss.length) parts.push("Без штрихкода (нет в файле №1): " + miss.length + " - " + miss.slice(0, 4).join(", ") + (miss.length > 4 ? "…" : "") + ".");
+      if (noQty) parts.push("Без количества: " + noQty + ".");
+      showMessage(miss.length || noQty ? "warn" : "ok", "Данные из Лист1 перенесены", parts.join(" ") + " Проверьте список и нажмите «Сохранить файл для Ozon».");
+    }
+
+    /* ---- сборка версии для телефона ---- */
+
+    function buildPhoneFile() {
+      var data = {
+        catalog: pack.catalog,
+        boxes: pack.boxes,
+        pallets: pack.pallets,
+        list1: pack.list1,
+        file2Name: pack.file2Name,
+        file2: b64encode(pack.file2)
+      };
+      if (!ready) { showMessage("err", "Страница ещё грузится", "Подождите секунду и нажмите снова."); return; }
+
+      // собираем копию страницы через DOM: данные кладём в <head>, чтобы они
+      // выполнились раньше основного скрипта
+      var clone = document.documentElement.cloneNode(true);
+      var old = clone.querySelector("#packdata");
+      if (old) old.parentNode.removeChild(old);
+      var tag = document.createElement("script");
+      tag.id = "packdata";
+      tag.textContent = "window.__PACK__=" + JSON.stringify(data).replace(/<\//g, "<\\/") + ";";
+      (clone.querySelector("head") || clone).appendChild(tag);
+
+      var name = "Сканер " + pack.file2Name.replace(/\.xlsx$/i, "") + ".html";
+      saveBlob(new Blob(["<!doctype html>\n" + clone.outerHTML], { type: "text/html" }), name);
+      showMessage("ok", "Файл для телефона готов", "Отправьте «" + name + "» себе в мессенджер и откройте на телефоне. Оба справочника уже внутри, интернет не нужен.");
+    }
+
+    /* ================= события ================= */
+
+    function bindDrop(dropId, inputId, handler) {
+      var drop = el(dropId), input = el(inputId);
+      drop.addEventListener("click", function () { input.click(); });
+      drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
+      ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.style.borderColor = "var(--accent)"; }); });
+      ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.style.borderColor = ""; }); });
+      drop.addEventListener("drop", function (e) { if (e.dataTransfer.files.length) handler(e.dataTransfer.files[0]); });
+      input.addEventListener("change", function (e) { if (e.target.files.length) handler(e.target.files[0]); });
+    }
+
+    bindDrop("drop1", "file1", function (f) {
+      showMessage(null);
+      loadFile1(f).then(function (res) {
+        raw1 = res;
+        el("name1").textContent = f.name;
+        el("drop1").classList.add("done");
+        checkReady();
+      })["catch"](function (err) { showMessage("err", "Файл №1 не прочитан", err.message); });
+    });
+
+    bindDrop("drop2", "file2", function (f) {
+      showMessage(null);
+      loadFile2(f).then(function (res) {
+        raw2 = res;
+        el("name2").textContent = f.name;
+        el("drop2").classList.add("done");
+        checkReady();
+      })["catch"](function (err) { showMessage("err", "Файл №2 не прочитан", err.message); });
+    });
+
+    el("goScan").addEventListener("click", function () {
+      screen("scan");
+      if (loadProgress()) showMessage("ok", "Продолжаем с прошлого раза", "Восстановлено коробок: " + rows.length + ". Чтобы начать заново, удалите строки крестиком.");
+      renderList();
+      focusScan();
+    });
+    el("goPack").addEventListener("click", buildPhoneFile);
+    el("goList1").addEventListener("click", fillFromList1);
+    el("goList1Scan").addEventListener("click", fillFromList1);
+    el("backBtn").addEventListener("click", function () { screen("load"); showMessage(null); });
+
+    el("palletInput").addEventListener("input", function () { refreshHead(); saveProgress(); });
+    el("shkInput").addEventListener("input", refreshFound);
+    el("shkInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); if (el("qtyInput").value) addRow(); else el("qtyInput").focus(); }
+    });
+    el("qtyInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); addRow(); }
+    });
+    el("addBtn").addEventListener("click", addRow);
+    el("undoBtn").addEventListener("click", function () {
+      if (!rows.length) return;
+      rows.pop();
+      renderList();
+      showMessage(null);
+    });
+    el("listBox").addEventListener("click", function (e) {
+      var idx = e.target.getAttribute && e.target.getAttribute("data-del");
+      if (idx === null || idx === undefined) return;
+      rows.splice(parseInt(idx, 10), 1);
+      renderList();
+    });
+    el("saveBtn").addEventListener("click", function () { saveResult(false); });
+    el("shareBtn").addEventListener("click", function () { saveResult(true); });
+    if (canShareFiles()) el("shareBtn").classList.remove("hidden");
+    el("camBtn").addEventListener("click", openCamera);
+    el("camClose").addEventListener("click", closeCamera);
+
+    /* ---- запуск ---- */
+
+    if (window.__PACK__) {
+      try {
+      var d = window.__PACK__;
+      pack = {
+        catalog: d.catalog, boxes: d.boxes, pallets: d.pallets, list1: d.list1,
+        file2: b64decode(d.file2), file2Name: d.file2Name, gmPath: null, gm: null
+      };
+      // лист «Состав ГМ поставки» читаем из вшитого файла
+      var buf = pack.file2.buffer.slice(pack.file2.byteOffset, pack.file2.byteOffset + pack.file2.byteLength);
+      var zip = readZip(buf);
+      Promise.all([entryText(zip, "xl/sharedStrings.xml"), entryText(zip, "xl/workbook.xml"), entryText(zip, "xl/_rels/workbook.xml.rels")])
+        .then(function (p) {
+          var map = sheetMap(zip, p[1], p[2]);
+          pack.gmPath = map["Состав ГМ поставки"];
+          return entryText(zip, pack.gmPath).then(function (xml) {
+            pack.gm = readSheet(xml, sharedStrings(p[0]));
+            el("subtitle").textContent = "Поставка «" + pack.file2Name + "»: коробок " + pack.boxes.length + ", паллет " + pack.pallets.length + ". Работает без интернета.";
+            screen("scan");
+            if (loadProgress()) showMessage("ok", "Продолжаем с прошлого раза", "Восстановлено коробок: " + rows.length + ".");
+            renderList();
+          });
+        })["catch"](function (err) { showMessage("err", "Данные не открылись", err.message); });
+      } catch (e) {
+        showMessage("err", "Данные не открылись", e.message);
+        console.log("pack: сбой", e);
+      }
+    } else {
+      screen("load");
+    }
+
+    window.__scan = {
+      get rows() { return rows; }, addRow: addRow, fillFromList1: fillFromList1, saveResult: saveResult,
+      readZip: readZip, entryText: entryText, sheetMap: sheetMap, readSheet: readSheet,
+      sharedStrings: sharedStrings, b64decode: b64decode, parseXml: parseXml
+    };
+  })();
+</script>

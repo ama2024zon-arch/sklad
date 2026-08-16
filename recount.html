@@ -1,0 +1,1139 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пересчёт упаковок</title>
+<style>
+  :root {
+    --bg: #E6E7E3;
+    --panel: #FBFBF9;
+    --panel-2: #F1F1EC;
+    --ink: #171A18;
+    --muted: #666B65;
+    --line: #CDCFC8;
+    --line-strong: #B2B6AC;
+    --accent: #9C4A16;
+    --accent-ink: #FFF7F1;
+    --accent-soft: #F1E1D3;
+    --ok: #2E5F4E;
+    --ok-soft: #DEE9E3;
+    --warn: #855F10;
+    --warn-soft: #F2E7CC;
+    --shadow: 0 1px 2px rgba(23, 26, 24, .07), 0 10px 26px -14px rgba(23, 26, 24, .28);
+    --radius: 4px;
+    --sans: ui-sans-serif, "Segoe UI Variable Display", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", "SF Mono", "Roboto Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141613;
+      --panel: #1D201C;
+      --panel-2: #252822;
+      --ink: #E9EBE4;
+      --muted: #979C92;
+      --line: #31352F;
+      --line-strong: #474C43;
+      --accent: #E1894C;
+      --accent-ink: #17190F;
+      --accent-soft: #382718;
+      --ok: #79B79B;
+      --ok-soft: #1F2E27;
+      --warn: #D6A951;
+      --warn-soft: #2F2817;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 12px 30px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #141613;
+    --panel: #1D201C;
+    --panel-2: #252822;
+    --ink: #E9EBE4;
+    --muted: #979C92;
+    --line: #31352F;
+    --line-strong: #474C43;
+    --accent: #E1894C;
+    --accent-ink: #17190F;
+    --accent-soft: #382718;
+    --ok: #79B79B;
+    --ok-soft: #1F2E27;
+    --warn: #D6A951;
+    --warn-soft: #2F2817;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 12px 30px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 32px 20px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* --- шапка --- */
+  header { display: flex; flex-direction: column; gap: 8px; }
+
+  .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(24px, 3.4vw, 32px);
+    font-weight: 620;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+  }
+
+  .sub { margin: 0; color: var(--muted); max-width: 62ch; }
+
+  .steps {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+  }
+
+  .step b {
+    display: inline-grid;
+    place-items: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--line);
+    color: var(--ink);
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+
+  .step[data-on="1"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .step[data-on="1"] b { background: var(--accent); color: var(--accent-ink); }
+  .step[data-done="1"] b { background: var(--ok); color: var(--panel); }
+
+  /* --- зона загрузки --- */
+  .drop {
+    position: relative;
+    display: grid;
+    place-items: center;
+    gap: 14px;
+    padding: 46px 24px;
+    text-align: center;
+    background: var(--panel);
+    border: 2px dashed var(--line-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+
+  .drop:hover, .drop:focus-visible { border-color: var(--accent); background: var(--panel-2); }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
+  .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .drop-title { font-size: 19px; font-weight: 600; }
+  .drop-hint { color: var(--muted); font-size: 14px; max-width: 46ch; }
+
+  .box-icon { width: 40px; height: 40px; color: var(--accent); }
+
+  /* --- строка загруженного файла --- */
+  .filebar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  .filebar .name { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+  .filebar .meta { color: var(--muted); font-size: 13.5px; }
+  .filebar .spacer { flex: 1 1 auto; }
+
+  /* --- кнопки --- */
+  button {
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 550;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    color: var(--ink);
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, transform .12s ease;
+  }
+
+  button:hover { background: var(--panel-2); border-color: var(--muted); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[disabled] { opacity: .5; cursor: default; transform: none; }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  button.primary:hover { filter: brightness(1.07); background: var(--accent); border-color: var(--accent); }
+
+  /* --- плитки итогов --- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+
+  .tile {
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tile .label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .tile .value {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+
+  .tile .note { font-size: 13px; color: var(--muted); }
+  .tile.accent { border-color: var(--accent); background: var(--accent-soft); }
+  .tile.accent .value { color: var(--accent); }
+
+  /* --- панель действий --- */
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .actions .spacer { flex: 1 1 auto; }
+
+  .search {
+    font: inherit;
+    font-size: 14.5px;
+    padding: 9px 12px;
+    min-width: 210px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+  }
+
+  .search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+  /* --- таблица --- */
+  .table-shell {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .table-scroll { max-height: 62vh; overflow: auto; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line-strong);
+    text-align: left;
+    padding: 0;
+    font-weight: 600;
+  }
+
+  thead th button {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 11px 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  thead th.num button { justify-content: flex-end; }
+  thead th button:hover { background: var(--line); }
+  thead th[aria-sort] button { color: var(--ink); }
+
+  tbody td {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 14.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+  tbody tr:hover { background: var(--accent-soft); }
+  td.num { text-align: right; font-weight: 600; }
+  td.src { text-align: right; color: var(--muted); font-size: 13px; font-weight: 400; }
+
+  .empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 14.5px; }
+
+  /* --- сообщения --- */
+  .msg {
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-left-width: 3px;
+    border-radius: var(--radius);
+    background: var(--panel);
+    font-size: 14.5px;
+  }
+
+  .msg.err { border-left-color: var(--accent); background: var(--accent-soft); }
+  .msg.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .msg.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .msg strong { display: block; margin-bottom: 2px; }
+
+  details.problems { border: 1px solid var(--warn); border-radius: var(--radius); background: var(--warn-soft); }
+  details.problems summary { padding: 12px 14px; cursor: pointer; font-weight: 550; font-size: 14.5px; }
+  details.problems summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  details.problems ul { margin: 0; padding: 0 16px 14px 34px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; }
+  details.problems li { font-family: var(--mono); font-size: 13.5px; }
+
+  details.how { border-top: 1px solid var(--line); padding-top: 16px; }
+  details.how summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.how summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  details.how .body { padding-top: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; color: var(--ink); max-width: 68ch; }
+  details.how ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  details.how code { font-family: var(--mono); font-size: 13.5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+
+  .hidden { display: none !important; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Пересчёт упаковок</h1>
+    </div>
+    <p class="sub">Файл поставки превращается в сводку: количество умножается на фасовку из артикула, одинаковые артикулы складываются в одну строку.</p>
+    <div class="steps" id="steps">
+      <span class="step" data-step="1" data-on="1"><b>1</b> Файл</span>
+      <span class="step" data-step="2"><b>2</b> Проверка</span>
+      <span class="step" data-step="3"><b>3</b> Выгрузка</span>
+    </div>
+  </header>
+
+  <div id="dropZone" class="drop" tabindex="0" role="button" aria-label="Выбрать файл Excel для пересчёта">
+    <svg class="box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 8v8a2 2 0 0 1-1.1 1.8l-7 3.5a2 2 0 0 1-1.8 0l-7-3.5A2 2 0 0 1 3 16V8" />
+      <path d="M3.3 7.1l8 4a1.5 1.5 0 0 0 1.4 0l8-4a1 1 0 0 0 0-1.8l-8-4a1.5 1.5 0 0 0-1.4 0l-8 4a1 1 0 0 0 0 1.8Z" />
+      <path d="M12 11.5V21" />
+    </svg>
+    <div class="drop-title">Перетащите файл сюда или нажмите, чтобы выбрать</div>
+    <div class="drop-hint">Excel (.xlsx) или .csv. Столбец A - артикул, столбец C - количество. Файл остаётся на вашем компьютере, никуда не отправляется.</div>
+  </div>
+  <input id="fileInput" type="file" accept=".xlsx,.csv,.txt" class="hidden">
+
+  <div id="fileBar" class="filebar hidden">
+    <span class="name" id="fileName"></span>
+    <span class="meta" id="fileMeta"></span>
+    <span class="spacer"></span>
+    <button type="button" id="resetBtn">Другой файл</button>
+  </div>
+
+  <div id="message" class="hidden" role="status" aria-live="polite"></div>
+
+  <section id="result" class="hidden" style="display:flex;flex-direction:column;gap:20px">
+    <div class="tiles">
+      <div class="tile">
+        <span class="label">Строк в файле</span>
+        <span class="value" id="statRows">0</span>
+        <span class="note" id="statRowsNote">учтено при пересчёте</span>
+      </div>
+      <div class="tile">
+        <span class="label">Артикулов</span>
+        <span class="value" id="statArts">0</span>
+        <span class="note">после объединения одинаковых</span>
+      </div>
+      <div class="tile accent">
+        <span class="label">Всего штук</span>
+        <span class="value" id="statUnits">0</span>
+        <span class="note">количество × фасовка</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="primary" id="downloadBtn">Скачать Excel</button>
+      <button type="button" id="copyBtn">Скопировать таблицу</button>
+      <span class="spacer"></span>
+      <input type="search" class="search" id="search" placeholder="Поиск по артикулу" aria-label="Поиск по артикулу">
+    </div>
+
+    <details class="problems hidden" id="problemsBox">
+      <summary id="problemsSummary"></summary>
+      <ul id="problemsList"></ul>
+    </details>
+
+    <div class="table-shell">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th aria-sort="ascending" data-key="art"><button type="button">Артикул <span class="arrow">↑</span></button></th>
+              <th class="num" data-key="qty"><button type="button">Количество, шт <span class="arrow"></span></button></th>
+              <th class="num" data-key="src"><button type="button">Строк <span class="arrow"></span></button></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="tableEmpty">Ничего не найдено</div>
+    </div>
+    <p class="sub" style="font-size:13.5px;margin:0">В выгрузке два столбца - артикул и количество. Колонка «Строк» показана только на экране: сколько позиций файла сложилось в этот артикул.</p>
+  </section>
+
+  <details class="how">
+    <summary>Как считается</summary>
+    <div class="body">
+      <ol>
+        <li>Артикул из столбца A делится по последнему дефису: <code>630607-100</code> → артикул <code>630607</code>, фасовка <code>100</code>.</li>
+        <li>Количество из столбца C умножается на фасовку: <code>5 × 100 = 500</code> штук.</li>
+        <li>Одинаковые артикулы складываются: две строки <code>210523-1</code> по 16 и 12 дают <code>210523 → 28</code>.</li>
+      </ol>
+      <p style="margin:0">Если после дефиса стоит не число или дефиса нет, фасовка считается равной 1, а строка попадает в список «Проверьте вручную» - она всё равно учтена в сводке.</p>
+    </div>
+  </details>
+</div>
+
+<script>
+  (function () {
+    "use strict";
+
+    var el = function (id) { return document.getElementById(id); };
+    var state = { summary: [], problems: [], fileName: "", sortKey: "art", sortDir: 1, dataRows: 0, usedRows: 0 };
+
+    /* ---------- разбор xlsx ---------- */
+
+    function findEocd(dv, len) {
+      var min = Math.max(0, len - 22 - 65535);
+      for (var i = len - 22; i >= min; i--) {
+        if (dv.getUint32(i, true) === 0x06054b50) return i;
+      }
+      return -1;
+    }
+
+    function readZip(buffer) {
+      var u8 = new Uint8Array(buffer);
+      var dv = new DataView(buffer);
+      var eocd = findEocd(dv, u8.length);
+      if (eocd < 0) throw new Error("Это не файл Excel (.xlsx). Сохраните таблицу в формате «Книга Excel (.xlsx)» и попробуйте снова.");
+      var count = dv.getUint16(eocd + 10, true);
+      var offset = dv.getUint32(eocd + 16, true);
+      var dec = new TextDecoder("utf-8");
+      var files = {};
+      for (var n = 0; n < count; n++) {
+        if (offset + 46 > u8.length || dv.getUint32(offset, true) !== 0x02014b50) break;
+        var method = dv.getUint16(offset + 10, true);
+        var compSize = dv.getUint32(offset + 20, true);
+        var nameLen = dv.getUint16(offset + 28, true);
+        var extraLen = dv.getUint16(offset + 30, true);
+        var commentLen = dv.getUint16(offset + 32, true);
+        var localOff = dv.getUint32(offset + 42, true);
+        var name = dec.decode(u8.subarray(offset + 46, offset + 46 + nameLen));
+        files[name] = { method: method, compSize: compSize, localOff: localOff };
+        offset += 46 + nameLen + extraLen + commentLen;
+      }
+      return { u8: u8, dv: dv, files: files };
+    }
+
+    function entryText(zip, name) {
+      var f = zip.files[name];
+      if (!f) return Promise.resolve(null);
+      var lo = f.localOff;
+      if (zip.dv.getUint32(lo, true) !== 0x04034b50) {
+        return Promise.reject(new Error("Файл Excel повреждён - не читается внутренняя структура."));
+      }
+      var nameLen = zip.dv.getUint16(lo + 26, true);
+      var extraLen = zip.dv.getUint16(lo + 28, true);
+      var start = lo + 30 + nameLen + extraLen;
+      var raw = zip.u8.subarray(start, start + f.compSize);
+      if (f.method === 0) return Promise.resolve(new TextDecoder("utf-8").decode(raw));
+      if (f.method !== 8) return Promise.reject(new Error("Файл Excel сжат неизвестным способом - пересохраните его из Excel."));
+      if (typeof DecompressionStream === "undefined") {
+        return Promise.reject(new Error("Браузер не умеет распаковывать .xlsx. Откройте страницу в Chrome, Edge или Safari посвежее."));
+      }
+      var stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Response(stream).text();
+    }
+
+    function parseXml(text, what) {
+      var doc = new DOMParser().parseFromString(text, "application/xml");
+      if (doc.getElementsByTagName("parsererror").length) {
+        throw new Error("Не удалось прочитать " + what + " внутри файла Excel.");
+      }
+      return doc;
+    }
+
+    function sharedStrings(text) {
+      if (!text) return [];
+      var doc = parseXml(text, "список текстов");
+      var out = [];
+      var items = doc.getElementsByTagName("si");
+      for (var i = 0; i < items.length; i++) {
+        var parts = items[i].getElementsByTagName("t");
+        var s = "";
+        for (var j = 0; j < parts.length; j++) {
+          if (parts[j].parentNode && parts[j].parentNode.nodeName === "rPh") continue;
+          s += parts[j].textContent;
+        }
+        out.push(s);
+      }
+      return out;
+    }
+
+    function colIndex(ref) {
+      var n = 0;
+      for (var i = 0; i < ref.length; i++) {
+        var code = ref.charCodeAt(i);
+        if (code < 65 || code > 90) break;
+        n = n * 26 + (code - 64);
+      }
+      return n;
+    }
+
+    function sheetPath(zip, workbookXml, relsXml) {
+      try {
+        if (workbookXml && relsXml) {
+          var wb = parseXml(workbookXml, "список листов");
+          var sheets = wb.getElementsByTagName("sheet");
+          if (sheets.length) {
+            var rid = sheets[0].getAttribute("r:id") || sheets[0].getAttribute("id");
+            var rels = parseXml(relsXml, "связи листов").getElementsByTagName("Relationship");
+            for (var i = 0; i < rels.length; i++) {
+              if (rels[i].getAttribute("Id") === rid) {
+                var target = rels[i].getAttribute("Target").replace(/^\/?xl\//, "").replace(/^\//, "");
+                if (zip.files["xl/" + target]) return "xl/" + target;
+              }
+            }
+          }
+        }
+      } catch (e) { /* уходим на запасной путь */ }
+      var names = Object.keys(zip.files).filter(function (n) { return /^xl\/worksheets\/sheet\d*\.xml$/.test(n); }).sort();
+      return names[0] || null;
+    }
+
+    function readSheet(text, shared) {
+      var doc = parseXml(text, "лист таблицы");
+      var rows = [];
+      var rowNodes = doc.getElementsByTagName("row");
+      for (var i = 0; i < rowNodes.length; i++) {
+        var rowNum = parseInt(rowNodes[i].getAttribute("r"), 10) || (i + 1);
+        var cells = {};
+        var cNodes = rowNodes[i].getElementsByTagName("c");
+        for (var j = 0; j < cNodes.length; j++) {
+          var c = cNodes[j];
+          var col = colIndex(c.getAttribute("r") || "");
+          if (!col) continue;
+          var t = c.getAttribute("t");
+          var val = null;
+          if (t === "inlineStr") {
+            var isNode = c.getElementsByTagName("is")[0];
+            val = isNode ? isNode.textContent : null;
+          } else {
+            var v = c.getElementsByTagName("v")[0];
+            if (v) {
+              if (t === "s") { val = shared[parseInt(v.textContent, 10)]; if (val === undefined) val = ""; }
+              else val = v.textContent;
+            }
+          }
+          if (val !== null && val !== undefined && String(val).trim() !== "") cells[col] = String(val).trim();
+        }
+        if (Object.keys(cells).length) rows.push({ n: rowNum, cells: cells });
+      }
+      return rows;
+    }
+
+    function readCsvText(text) {
+      var clean = text.replace(/^﻿/, "");
+      var sep = (clean.split(";").length > clean.split(",").length) ? ";" : ",";
+      if (clean.indexOf("\t") > -1 && clean.split("\t").length > clean.split(sep).length) sep = "\t";
+      var lines = clean.split(/\r\n|\n|\r/);
+      var rows = [];
+      for (var i = 0; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        var cells = {};
+        var parts = splitCsvLine(lines[i], sep);
+        for (var j = 0; j < parts.length; j++) {
+          var v = parts[j].trim();
+          if (v) cells[j + 1] = v;
+        }
+        if (Object.keys(cells).length) rows.push({ n: i + 1, cells: cells });
+      }
+      return rows;
+    }
+
+    function splitCsvLine(line, sep) {
+      var out = [], cur = "", inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (inQ) {
+          if (ch === '"') {
+            if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false;
+          } else cur += ch;
+        } else if (ch === '"') inQ = true;
+        else if (ch === sep) { out.push(cur); cur = ""; }
+        else cur += ch;
+      }
+      out.push(cur);
+      return out;
+    }
+
+    /* ---------- пересчёт ---------- */
+
+    function toNumber(raw) {
+      if (raw === undefined || raw === null) return null;
+      raw = String(raw).replace(/[  \s]/g, "");
+      var s = String(raw).replace(/\s| /g, "").replace(",", ".");
+      if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return null;
+      return parseFloat(s);
+    }
+
+    function process(rows) {
+      var problems = [];
+      var map = Object.create(null);
+      var order = [];
+      var used = 0;
+
+      var start = 0;
+      if (rows.length) {
+        var first = rows[0].cells;
+        var head = (first[1] || "").toLowerCase();
+        if (head.indexOf("артикул") > -1 || toNumber(first[3]) === null) start = 1;
+      }
+
+      for (var i = start; i < rows.length; i++) {
+        var cells = rows[i].cells;
+        var art = cells[1];
+        var qtyRaw = cells[3];
+        if (!art && (qtyRaw === undefined || qtyRaw === null)) continue;
+
+        if (!art) {
+          problems.push({ row: rows[i].n, text: "нет артикула в столбце A - строка пропущена" });
+          continue;
+        }
+        var qty = toNumber(qtyRaw);
+        if (qty === null) {
+          problems.push({ row: rows[i].n, text: art + " - количество «" + (qtyRaw === undefined ? "пусто" : qtyRaw) + "» не число, строка пропущена" });
+          continue;
+        }
+
+        var base = art, pack = 1;
+        var dash = art.lastIndexOf("-");
+        if (dash > 0 && dash < art.length - 1) {
+          var tail = art.slice(dash + 1).trim();
+          if (/^\d+$/.test(tail) && parseInt(tail, 10) > 0) {
+            base = art.slice(0, dash).trim();
+            pack = parseInt(tail, 10);
+          } else {
+            problems.push({ row: rows[i].n, text: art + " - после дефиса не число, посчитано как 1 в упаковке" });
+          }
+        } else {
+          problems.push({ row: rows[i].n, text: art + " - нет фасовки после дефиса, посчитано как 1 в упаковке" });
+        }
+
+        if (!map[base]) { map[base] = { art: base, qty: 0, src: 0 }; order.push(base); }
+        map[base].qty += qty * pack;
+        map[base].src += 1;
+        used++;
+      }
+
+      var summary = order.map(function (k) {
+        var r = map[k];
+        r.qty = Math.round(r.qty * 1000) / 1000;
+        return r;
+      });
+
+      return { summary: summary, problems: problems, used: used, total: rows.length - start };
+    }
+
+    /* ---------- вывод ---------- */
+
+    function fmt(n) {
+      var s = (Math.abs(n % 1) > 1e-9) ? String(n).replace(".", ",") : String(Math.round(n));
+      return s.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    }
+
+    function compare(a, b, key) {
+      if (key === "art") {
+        var na = parseInt(a.art, 10), nb = parseInt(b.art, 10);
+        if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+        return a.art.localeCompare(b.art, "ru");
+      }
+      return a[key] - b[key];
+    }
+
+    function visibleRows() {
+      var q = el("search").value.trim().toLowerCase();
+      var list = state.summary.filter(function (r) { return !q || r.art.toLowerCase().indexOf(q) > -1; });
+      var key = state.sortKey, dir = state.sortDir;
+      return list.slice().sort(function (a, b) { return compare(a, b, key) * dir; });
+    }
+
+    function renderTable() {
+      var rows = visibleRows();
+      var html = rows.map(function (r) {
+        return "<tr><td>" + escapeHtml(r.art) + "</td><td class=\"num\">" + fmt(r.qty) + "</td><td class=\"src\">" + r.src + "</td></tr>";
+      }).join("");
+      el("tbody").innerHTML = html;
+      el("tableEmpty").classList.toggle("hidden", rows.length > 0);
+
+      var ths = document.querySelectorAll("thead th");
+      for (var i = 0; i < ths.length; i++) {
+        var key = ths[i].getAttribute("data-key");
+        var arrow = ths[i].querySelector(".arrow");
+        if (key === state.sortKey) {
+          ths[i].setAttribute("aria-sort", state.sortDir === 1 ? "ascending" : "descending");
+          arrow.textContent = state.sortDir === 1 ? "↑" : "↓";
+        } else {
+          ths[i].removeAttribute("aria-sort");
+          arrow.textContent = "";
+        }
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function setStep(active, done) {
+      var steps = document.querySelectorAll(".step");
+      for (var i = 0; i < steps.length; i++) {
+        var n = parseInt(steps[i].getAttribute("data-step"), 10);
+        steps[i].setAttribute("data-on", n === active ? "1" : "0");
+        steps[i].setAttribute("data-done", n < active || (done && n === active) ? "1" : "0");
+      }
+    }
+
+    function showMessage(kind, title, text) {
+      var box = el("message");
+      if (!kind) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+      box.className = "msg " + kind;
+      box.innerHTML = "<strong>" + escapeHtml(title) + "</strong>" + escapeHtml(text || "");
+      box.classList.remove("hidden");
+    }
+
+    function renderProblems() {
+      var box = el("problemsBox");
+      if (!state.problems.length) { box.classList.add("hidden"); return; }
+      box.classList.remove("hidden");
+      var word = state.problems.length === 1 ? "строка" : (state.problems.length < 5 ? "строки" : "строк");
+      el("problemsSummary").textContent = "Проверьте вручную: " + state.problems.length + " " + word;
+      el("problemsList").innerHTML = state.problems.slice(0, 200).map(function (p) {
+        return "<li>Строка " + p.row + ": " + escapeHtml(p.text) + "</li>";
+      }).join("") + (state.problems.length > 200 ? "<li>… и ещё " + (state.problems.length - 200) + "</li>" : "");
+    }
+
+    /* ---------- выгрузка ---------- */
+
+    function csvBody() {
+      var lines = ["Артикул;Количество"];
+      var rows = state.summary.slice().sort(function (a, b) { return compare(a, b, state.sortKey) * state.sortDir; });
+      rows.forEach(function (r) {
+        var qty = (Math.abs(r.qty % 1) > 1e-9) ? String(r.qty).replace(".", ",") : String(Math.round(r.qty));
+        lines.push(csvCell(r.art) + ";" + qty);
+      });
+      return "﻿" + lines.join("\r\n") + "\r\n";
+    }
+
+    function csvCell(v) {
+      var s = String(v);
+      return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    function tsvBody() {
+      var rows = state.summary.slice().sort(function (a, b) { return compare(a, b, state.sortKey) * state.sortDir; });
+      return "Артикул\tКоличество\r\n" + rows.map(function (r) {
+        var qty = (Math.abs(r.qty % 1) > 1e-9) ? String(r.qty).replace(".", ",") : String(Math.round(r.qty));
+        return r.art + "\t" + qty;
+      }).join("\r\n");
+    }
+
+    function outName(ext) {
+      var base = state.fileName.replace(/\.[^.]+$/, "") || "поставка";
+      var d = new Date();
+      var stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      return "Сводка_" + base + "_" + stamp + "." + ext;
+    }
+
+    /* --- сборка настоящего .xlsx: ZIP без сжатия + минимальный OOXML --- */
+
+    var crcTable = null;
+
+    function crc32(bytes) {
+      if (!crcTable) {
+        crcTable = new Uint32Array(256);
+        for (var i = 0; i < 256; i++) {
+          var c = i;
+          for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          crcTable[i] = c >>> 0;
+        }
+      }
+      var crc = 0xFFFFFFFF;
+      for (var n = 0; n < bytes.length; n++) crc = crcTable[(crc ^ bytes[n]) & 0xFF] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function zipStore(entries) {
+      var enc = new TextEncoder();
+      var d = new Date();
+      var dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2));
+      var dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+      var parts = [], central = [], offset = 0;
+
+      entries.forEach(function (e) {
+        var name = enc.encode(e.name);
+        var data = enc.encode(e.text);
+        var crc = crc32(data);
+
+        var local = new Uint8Array(30 + name.length);
+        var lv = new DataView(local.buffer);
+        lv.setUint32(0, 0x04034b50, true);
+        lv.setUint16(4, 20, true);
+        lv.setUint16(6, 0x0800, true);
+        lv.setUint16(8, 0, true);
+        lv.setUint16(10, dosTime, true);
+        lv.setUint16(12, dosDate, true);
+        lv.setUint32(14, crc, true);
+        lv.setUint32(18, data.length, true);
+        lv.setUint32(22, data.length, true);
+        lv.setUint16(26, name.length, true);
+        lv.setUint16(28, 0, true);
+        local.set(name, 30);
+
+        var head = new Uint8Array(46 + name.length);
+        var hv = new DataView(head.buffer);
+        hv.setUint32(0, 0x02014b50, true);
+        hv.setUint16(4, 20, true);
+        hv.setUint16(6, 20, true);
+        hv.setUint16(8, 0x0800, true);
+        hv.setUint16(10, 0, true);
+        hv.setUint16(12, dosTime, true);
+        hv.setUint16(14, dosDate, true);
+        hv.setUint32(16, crc, true);
+        hv.setUint32(20, data.length, true);
+        hv.setUint32(24, data.length, true);
+        hv.setUint16(28, name.length, true);
+        hv.setUint32(42, offset, true);
+        head.set(name, 46);
+
+        parts.push(local, data);
+        central.push(head);
+        offset += local.length + data.length;
+      });
+
+      var centralSize = central.reduce(function (s, c) { return s + c.length; }, 0);
+      var end = new Uint8Array(22);
+      var ev = new DataView(end.buffer);
+      ev.setUint32(0, 0x06054b50, true);
+      ev.setUint16(8, central.length, true);
+      ev.setUint16(10, central.length, true);
+      ev.setUint32(12, centralSize, true);
+      ev.setUint32(16, offset, true);
+
+      return new Blob(parts.concat(central, [end]), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    }
+
+    function xmlEscape(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c];
+      });
+    }
+
+    function xlsxBlob() {
+      var rows = state.summary.slice().sort(function (a, b) { return compare(a, b, state.sortKey) * state.sortDir; });
+      var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<cols><col min="1" max="1" width="20" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/></cols>' +
+        '<sheetData>' +
+        '<row r="1"><c r="A1" t="inlineStr" s="1"><is><t>Артикул</t></is></c>' +
+        '<c r="B1" t="inlineStr" s="1"><is><t>Количество</t></is></c></row>';
+      rows.forEach(function (r, i) {
+        var n = i + 2;
+        sheet += '<row r="' + n + '">' +
+          '<c r="A' + n + '" t="inlineStr"><is><t>' + xmlEscape(r.art) + '</t></is></c>' +
+          '<c r="B' + n + '"><v>' + r.qty + '</v></c></row>';
+      });
+      sheet += '</sheetData></worksheet>';
+
+      var ns = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+      return zipStore([
+        { name: "[Content_Types].xml", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+          '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+          '<Default Extension="xml" ContentType="application/xml"/>' +
+          '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+          '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+          '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+          '</Types>' },
+        { name: "_rels/.rels", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          '<Relationship Id="rId1" Type="' + ns + '/officeDocument" Target="xl/workbook.xml"/>' +
+          '</Relationships>' },
+        { name: "xl/workbook.xml", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="' + ns + '">' +
+          '<sheets><sheet name="Сводка" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+        { name: "xl/_rels/workbook.xml.rels", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          '<Relationship Id="rId1" Type="' + ns + '/worksheet" Target="worksheets/sheet1.xml"/>' +
+          '<Relationship Id="rId2" Type="' + ns + '/styles" Target="styles.xml"/>' +
+          '</Relationships>' },
+        { name: "xl/styles.xml", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+          '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>' +
+          '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+          '<fills count="2"><fill><patternFill patternType="none"/></fill>' +
+          '<fill><patternFill patternType="gray125"/></fill></fills>' +
+          '<borders count="1"><border/></borders>' +
+          '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+          '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+          '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+          '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+          '</styleSheet>' },
+        { name: "xl/worksheets/sheet1.xml", text: sheet }
+      ]);
+    }
+
+    function saveLocally(blob, filename) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+
+    function download() {
+      var btn = el("downloadBtn");
+      btn.disabled = true;
+      var data = csvBody();
+      var ask = (typeof claude !== "undefined" && claude && typeof claude.use === "function")
+        ? claude.use("downloads")
+        : Promise.resolve(null);
+      ask.then(function (dl) {
+        if (!dl) {
+          try {
+            saveLocally(xlsxBlob(), outName("xlsx"));
+            showMessage("ok", "Файл сохранён", "Ищите его в папке «Загрузки» - там два столбца: артикул и количество.");
+            setStep(3, true);
+          } catch (e) {
+            showMessage("warn", "Сохранить файл не получилось", "Нажмите «Скопировать таблицу» и вставьте её в пустой лист Excel - результат будет тот же.");
+          }
+          btn.disabled = false;
+          return;
+        }
+        dl.save({ filename: outName("csv"), data: data }).then(function () {
+          showMessage("ok", "Файл сохранён", "Откройте его двойным щелчком - Excel покажет два столбца: артикул и количество.");
+          setStep(3, true);
+          btn.disabled = false;
+        })["catch"](function (err) {
+          var code = err && err.code;
+          if (code === "declined") { showMessage(null); btn.disabled = false; return; }
+          if (code === "rejected_extension" || code === "extension_not_enabled") {
+            dl.save({ filename: outName("txt"), data: data }).then(function () {
+              showMessage("ok", "Файл сохранён в формате .txt", "В Excel: Данные → Получить данные → Из текстового/CSV-файла. Или нажмите «Скопировать таблицу» и вставьте её в лист.");
+              setStep(3, true);
+              btn.disabled = false;
+            })["catch"](function () {
+              showMessage("warn", "Сохранить файл не получилось", "Нажмите «Скопировать таблицу» и вставьте её в пустой лист Excel.");
+              btn.disabled = false;
+            });
+            return;
+          }
+          if (code === "rate_limited") showMessage("warn", "Слишком часто", "Подождите пару секунд и нажмите ещё раз.");
+          else showMessage("warn", "Сохранить файл не получилось", "Нажмите «Скопировать таблицу» и вставьте её в пустой лист Excel.");
+          btn.disabled = false;
+        });
+      })["catch"](function () {
+        showMessage("warn", "Скачивание здесь недоступно", "Нажмите «Скопировать таблицу» и вставьте её в пустой лист Excel.");
+        btn.disabled = false;
+      });
+    }
+
+    function copyTable() {
+      var text = tsvBody();
+      var done = function () { showMessage("ok", "Скопировано", "Откройте Excel, встаньте в ячейку A1 и вставьте (Ctrl+V)."); };
+      var fail = function () { showMessage("warn", "Скопировать не удалось", "Выделите таблицу на странице мышью и скопируйте вручную (Ctrl+C)."); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done)["catch"](function () { legacyCopy(text) ? done() : fail(); });
+      } else {
+        legacyCopy(text) ? done() : fail();
+      }
+    }
+
+    function legacyCopy(text) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    /* ---------- поток работы ---------- */
+
+    function handleFile(file) {
+      if (!file) return;
+      showMessage(null);
+      state.fileName = file.name;
+      setStep(2);
+
+      var isCsv = /\.(csv|txt)$/i.test(file.name);
+      var reader = isCsv ? file.text() : file.arrayBuffer();
+
+      reader.then(function (payload) {
+        if (isCsv) return readCsvText(payload);
+        var zip = readZip(payload);
+        return Promise.all([
+          entryText(zip, "xl/sharedStrings.xml"),
+          entryText(zip, "xl/workbook.xml"),
+          entryText(zip, "xl/_rels/workbook.xml.rels")
+        ]).then(function (parts) {
+          var path = sheetPath(zip, parts[1], parts[2]);
+          if (!path) throw new Error("В файле не найден лист с данными.");
+          return entryText(zip, path).then(function (sheetXml) {
+            return readSheet(sheetXml, sharedStrings(parts[0]));
+          });
+        });
+      }).then(function (rows) {
+        if (!rows.length) throw new Error("Файл пустой - в нём нет строк с данными.");
+        var res = process(rows);
+        if (!res.summary.length) throw new Error("Не нашлось ни одной строки с артикулом в столбце A и количеством в столбце C.");
+
+        state.summary = res.summary;
+        state.problems = res.problems;
+        state.usedRows = res.used;
+        state.dataRows = res.total;
+        state.sortKey = "art";
+        state.sortDir = 1;
+
+        var totalUnits = res.summary.reduce(function (s, r) { return s + r.qty; }, 0);
+        el("statRows").textContent = fmt(res.used);
+        el("statRowsNote").textContent = res.used === res.total ? "все строки учтены" : ("из " + fmt(res.total) + " - остальные пропущены");
+        el("statArts").textContent = fmt(res.summary.length);
+        el("statUnits").textContent = fmt(Math.round(totalUnits * 1000) / 1000);
+
+        el("fileName").textContent = file.name;
+        el("fileMeta").textContent = Math.max(1, Math.round(file.size / 1024)) + " КБ";
+        el("fileBar").classList.remove("hidden");
+        el("dropZone").classList.add("hidden");
+        el("result").classList.remove("hidden");
+        el("search").value = "";
+
+        renderProblems();
+        renderTable();
+        setStep(3);
+      })["catch"](function (err) {
+        reset();
+        showMessage("err", "Файл не обработан", (err && err.message) || "Не удалось прочитать файл.");
+      });
+    }
+
+    function reset() {
+      state.summary = [];
+      state.problems = [];
+      state.fileName = "";
+      el("result").classList.add("hidden");
+      el("fileBar").classList.add("hidden");
+      el("dropZone").classList.remove("hidden");
+      el("fileInput").value = "";
+      setStep(1);
+    }
+
+    /* ---------- события ---------- */
+
+    var drop = el("dropZone");
+    drop.addEventListener("click", function () { el("fileInput").click(); });
+    drop.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el("fileInput").click(); }
+    });
+    ["dragenter", "dragover"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); });
+    });
+    ["dragleave", "drop"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); });
+    });
+    drop.addEventListener("drop", function (e) {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    el("fileInput").addEventListener("change", function (e) {
+      if (e.target.files && e.target.files.length) handleFile(e.target.files[0]);
+    });
+    el("resetBtn").addEventListener("click", function () { showMessage(null); reset(); });
+    el("downloadBtn").addEventListener("click", download);
+    el("copyBtn").addEventListener("click", copyTable);
+    el("search").addEventListener("input", renderTable);
+
+    var headers = document.querySelectorAll("thead th");
+    for (var i = 0; i < headers.length; i++) {
+      (function (th) {
+        th.querySelector("button").addEventListener("click", function () {
+          var key = th.getAttribute("data-key");
+          if (state.sortKey === key) state.sortDir = -state.sortDir;
+          else { state.sortKey = key; state.sortDir = key === "art" ? 1 : -1; }
+          renderTable();
+        });
+      })(headers[i]);
+    }
+
+    /* окно проверки для автотеста */
+    window.__pereschet = { process: process, readCsvText: readCsvText, state: state, handleFile: handleFile };
+  })();
+</script>
