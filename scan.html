@@ -131,6 +131,8 @@
   #cam video { flex: 1; width: 100%; object-fit: cover; }
   #cam .bar { padding: 12px; background: #000; display: flex; justify-content: center; }
   #cam .aim { position: absolute; left: 10%; right: 10%; top: 38%; height: 22%; border: 3px solid #E1894C; border-radius: 6px; pointer-events: none; }
+  #cam .camstat { position: absolute; left: 0; right: 0; bottom: 76px; text-align: center; color: #fff; font-size: 14.5px; padding: 8px 16px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+  #cam .bar { gap: 8px; }
 
   details.how { border-top: 1px solid var(--line); padding-top: 14px; }
   details.how summary { cursor: pointer; color: var(--muted); font-size: 14px; }
@@ -184,6 +186,7 @@
         <button type="button" id="goImport">Загрузить результат сканирования</button>
       </div>
       <button type="button" id="goPack">Файл для телефона (без интернета)</button>
+      <p class="sub hidden" id="needFile1" style="margin:0">Загружен только шаблон поставки. Этого хватит, чтобы собрать готовый файл из результата сканирования. Для ссылки на телефон, сканирования и переписи нужен ещё файл №1 - в нём штрихкоды товаров.</p>
       <input id="fileScan" type="file" accept=".csv,text/csv" class="hidden">
       <input id="fileManual" type="file" accept=".xlsx,.csv,.txt" class="hidden">
     </div>
@@ -266,7 +269,9 @@
       <button type="button" id="undoBtn">Отменить последнюю</button>
     </div>
     <button type="button" id="goList1Scan" class="hidden">Заполнить из Лист1 (ручная перепись)</button>
+    <button type="button" id="goPrev">Продолжить: подгрузить прошлый результат</button>
     <button type="button" id="backBtn">Загрузить другие файлы</button>
+    <input id="filePrev" type="file" accept=".csv,text/csv" class="hidden">
   </section>
 
   <details class="how">
@@ -285,9 +290,14 @@
 </div>
 
 <div id="cam" class="hidden">
-  <video id="camVideo" playsinline muted></video>
+  <video id="camVideo" playsinline muted autoplay></video>
   <div class="aim"></div>
-  <div class="bar"><button type="button" id="camClose">Закрыть камеру</button></div>
+  <div class="camstat" id="camStatus">Наведите камеру на штрихкод</div>
+  <div class="bar">
+    <button type="button" id="camTorch" class="hidden">Фонарик</button>
+    <button type="button" id="camManual">Ввести вручную</button>
+    <button type="button" id="camClose">Закрыть</button>
+  </div>
 </div>
 
 <script>
@@ -761,16 +771,21 @@
     }
 
     function checkReady() {
-      if (!raw1 || !raw2) return;
+      if (!raw2) return;
       pack = {
-        catalog: raw1, boxes: raw2.boxes, pallets: raw2.pallets, list1: raw2.list1,
+        catalog: raw1 || { byBar: {}, byArt: {}, goods: 0 },
+        boxes: raw2.boxes, pallets: raw2.pallets, list1: raw2.list1,
         file2: raw2.bytes, file2Name: raw2.name, gmPath: raw2.gmPath, gm: raw2.gm
       };
-      el("sumGoods").textContent = raw1.goods;
+      // без файла №1 нельзя искать артикул по штрихкоду - остаётся только сборка из результата
+      var needCat = !raw1;
+      ["goLink", "goScan", "goManualFile"].forEach(function (id) { el(id).disabled = needCat; });
+      el("needFile1").classList.toggle("hidden", !needCat);
+      el("sumGoods").textContent = raw1 ? raw1.goods : "-";
       el("sumBoxes").textContent = raw2.boxes.length;
       el("sumPallets").textContent = raw2.pallets.length;
       el("loadSummary").classList.remove("hidden");
-      el("goList1").classList.toggle("hidden", !(raw2.list1 && raw2.list1.length));
+      el("goList1").classList.toggle("hidden", !(raw1 && raw2.list1 && raw2.list1.length));
       if (raw2.list1 && raw2.list1.length) {
         el("goList1").textContent = "Заполнить из переписи: " + raw2.list1.length + " коробок" +
           (raw2.list1Sheet ? " (лист «" + raw2.list1Sheet + "»)" : "");
@@ -796,6 +811,31 @@
       el("boxNo").textContent = n;
       el("boxInput").value = n;
       el("boxShk").textContent = pack.boxes[n - 1] || "ШК коробки закончились";
+    }
+
+    /**
+     * Из текста оставляем один штрихкод. На айфоне «Сканировать текст» хватает всё
+     * подряд, поэтому сначала ищем в тексте код из справочника поставки, а если не
+     * нашли - самую длинную цепочку цифр (8-14 знаков, как у обычного штрихкода).
+     */
+    function cleanScan(text) {
+      var t = String(text || "").replace(/\s+/g, " ").trim();
+      if (!t) return "";
+      if (pack && pack.catalog && pack.catalog.byBar[t.toLowerCase()]) return t;
+
+      var lower = t.toLowerCase();
+      if (pack && pack.catalog) {
+        var keys = Object.keys(pack.catalog.byBar);
+        for (var i = 0; i < keys.length; i++) {
+          if (keys[i].length >= 6 && lower.indexOf(keys[i]) > -1) return pack.catalog.byBar[keys[i]].bar;
+        }
+      }
+      var best = "", chunks = t.match(/[0-9][0-9 ]{6,22}[0-9]/g) || [];
+      chunks.forEach(function (x) {
+        var digits = x.replace(/ /g, "");
+        if (digits.length >= 8 && digits.length <= 14 && digits.length > best.length) best = digits;
+      });
+      return best || t;
     }
 
     function lookup(code) {
@@ -836,15 +876,17 @@
     }
 
     function addRow() {
-      var shk = el("shkInput").value.trim();
+      var shk = cleanScan(el("shkInput").value);
       var qty = parseInt(el("qtyInput").value, 10);
       if (!shk) { showMessage("warn", "Нет штрихкода", "Отсканируйте коробку или введите ШК вручную."); el("shkInput").focus(); return; }
+      if (shk.length < 6) { showMessage("warn", "Штрихкод прочитался не целиком", "В поле только «" + shk + "». Отсканируйте ещё раз."); el("shkInput").focus(); return; }
+      if (!lookup(shk) && !window.confirm("Штрихкода «" + shk + "» нет в списке товаров этой поставки. Всё равно добавить коробку?")) { el("shkInput").focus(); return; }
       if (!qty || qty < 1) { showMessage("warn", "Нет количества", "Введите, сколько штук в этой коробке."); el("qtyInput").focus(); return; }
       if (rows.length >= pack.boxes.length) { showMessage("err", "Коробки закончились", "В файле " + pack.boxes.length + " штрихкодов коробок - больше внести нельзя."); return; }
       var p = currentPallet();
       if (!palletShk(p)) { showMessage("err", "Нет такой паллеты", "В файле только " + pack.pallets.length + " паллет. Проверьте номер."); return; }
       var hit = lookup(shk);
-      rows.push({ shk: shk, art: hit ? hit.art : "", qty: qty, pallet: p });
+      rows.push({ shk: shk, art: hit ? hit.art : "", qty: qty, pallet: p, palShk: palletShk(p) });
       showMessage(null);
       el("shkInput").value = "";
       el("qtyInput").value = "";
@@ -897,47 +939,125 @@
 
     /* ---- камера ---- */
 
+    var camTrack = null, camTimer = null;
+
+    function camSay(text) {
+      var box = el("camStatus");
+      if (box) box.textContent = text;
+    }
+
     function openCamera() {
       if (typeof BarcodeDetector === "undefined") {
         showMessage("warn", "Здесь камера штрихкод не читает", "На айфоне браузер этого не умеет. Нажмите и подержите поле «ШК товара», выберите «Сканировать текст» и наведите камеру на цифры под штрихкодом. Либо используйте сканер-пистолет - он печатает код прямо в поле.");
         return;
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showMessage("warn", "Нет доступа к камере", "Откройте файл через Chrome. Если камера не появится - вводите ШК вручную.");
+        showMessage("warn", "Нет доступа к камере", "Откройте страницу по ссылке сайта в Chrome и разрешите доступ к камере.");
         return;
       }
+
       el("cam").classList.remove("hidden");
       camStop = false;
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } }).then(function (stream) {
-        camStream = stream;
-        var v = el("camVideo");
-        v.srcObject = stream;
-        return v.play().then(function () {
-          var det = new BarcodeDetector();
-          var tick = function () {
-            if (camStop) return;
-            det.detect(v).then(function (codes) {
-              if (codes && codes.length) {
-                el("shkInput").value = codes[0].rawValue;
-                refreshFound();
-                closeCamera();
-                beep();
-                el("qtyInput").focus();
-              } else if (!camStop) {
-                requestAnimationFrame(tick);
-              }
-            })["catch"](function () { if (!camStop) setTimeout(tick, 300); });
-          };
-          tick();
-        });
-      })["catch"](function () {
-        closeCamera();
-        showMessage("warn", "Камера не открылась", "Разрешите доступ к камере или введите ШК вручную.");
+      camSay("Включаю камеру...");
+
+      var wanted = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "code_93", "itf", "codabar", "qr_code", "data_matrix"];
+      var formatsReady = (BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats() : Promise.resolve([]))
+        ["catch"](function () { return []; });
+
+      formatsReady.then(function (supported) {
+        var list = (supported || []).filter(function (f) { return wanted.indexOf(f) > -1; });
+        if (supported && supported.length && !list.length) {
+          closeCamera();
+          showMessage("warn", "Телефон не умеет читать такие штрихкоды", "Введите код вручную или используйте сканер-пистолет.");
+          return;
+        }
+        // крупная картинка и непрерывный автофокус - без них штрихкод часто не ловится
+        var hiRes = {
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 }, height: { ideal: 1080 },
+            advanced: [{ focusMode: "continuous" }]
+          }
+        };
+        navigator.mediaDevices.getUserMedia(hiRes)
+          ["catch"](function () { return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } }); })
+          .then(function (stream) { runDetector(stream, list.length ? list : null); })
+          ["catch"](function (err) {
+            closeCamera();
+            showMessage("warn", "Камера не открылась", (err && err.name === "NotAllowedError")
+              ? "Браузер не дал доступ. Разрешите камеру для этого сайта в настройках и попробуйте снова."
+              : "Введите ШК вручную или используйте сканер-пистолет.");
+          });
       });
+    }
+
+    function runDetector(stream, formats) {
+      camStream = stream;
+      camTrack = stream.getVideoTracks()[0];
+      var v = el("camVideo");
+      v.srcObject = stream;
+
+      // фонарик, если телефон умеет
+      try {
+        var caps = camTrack.getCapabilities ? camTrack.getCapabilities() : {};
+        if (caps && caps.torch) el("camTorch").classList.remove("hidden");
+      } catch (e) { }
+
+      var det;
+      try { det = formats ? new BarcodeDetector({ formats: formats }) : new BarcodeDetector(); }
+      catch (e) {
+        closeCamera();
+        showMessage("warn", "Распознавание не запустилось", "Введите ШК вручную или используйте сканер-пистолет.");
+        return;
+      }
+
+      v.play()["catch"](function () { });
+      camSay("Ищу штрихкод...");
+      var started = Date.now(), fails = 0;
+
+      var tick = function () {
+        if (camStop) return;
+        if (!v.videoWidth) { camTimer = setTimeout(tick, 150); return; }
+        det.detect(v).then(function (codes) {
+          if (camStop) return;
+          if (codes && codes.length && codes[0].rawValue) {
+            el("shkInput").value = codes[0].rawValue;
+            refreshFound();
+            closeCamera();
+            beep();
+            el("qtyInput").focus();
+            return;
+          }
+          var sec = Math.round((Date.now() - started) / 1000);
+          if (sec >= 8) camSay("Пока не видно. Держите 15-25 см, чтобы штрихкод влез в рамку целиком, и без наклона");
+          camTimer = setTimeout(tick, 120);
+        })["catch"](function (err) {
+          if (camStop) return;
+          fails++;
+          if (fails >= 5) {
+            closeCamera();
+            showMessage("warn", "Телефон не смог распознать штрихкод", "Похоже, на этом устройстве распознавание недоступно: " + ((err && err.message) || "нет подробностей") + ". Вводите код вручную или сканером-пистолетом.");
+            return;
+          }
+          camTimer = setTimeout(tick, 300);
+        });
+      };
+      tick();
+    }
+
+    function toggleTorch() {
+      if (!camTrack) return;
+      var on = !!(camTrack.__torch);
+      camTrack.applyConstraints({ advanced: [{ torch: !on }] }).then(function () {
+        camTrack.__torch = !on;
+        el("camTorch").textContent = !on ? "Выключить фонарик" : "Фонарик";
+      })["catch"](function () { camSay("Фонарик не включился"); });
     }
 
     function closeCamera() {
       camStop = true;
+      if (camTimer) { clearTimeout(camTimer); camTimer = null; }
+      camTrack = null;
       el("cam").classList.add("hidden");
       if (camStream) {
         camStream.getTracks().forEach(function (t) { t.stop(); });
@@ -955,7 +1075,7 @@
         patch[row][1] = { v: r.shk || "", num: false };
         patch[row][2] = { v: r.art || "", num: false };
         patch[row][3] = { v: String(r.qty || ""), num: !!r.qty };
-        patch[row][8] = { v: palletShk(r.pallet) || "", num: false };
+        patch[row][8] = { v: r.palShk || palletShk(r.pallet) || "", num: false };
         if (!r.art) problems.push("коробка " + (i + 1) + ": не определён артикул");
         if (!r.qty) problems.push("коробка " + (i + 1) + ": нет количества");
       });
@@ -1051,7 +1171,7 @@
     /* ---- заполнение из ручной переписи ---- */
 
     function fillFromList1() {
-      if (rows.length && !window.confirm("Уже внесено коробок: " + rows.length + ". Заменить их данными из Лист1?")) return;
+      if (rows.length && !window.confirm("Уже внесено коробок: " + rows.length + ". Заменить их данными из переписи?")) return;
       var miss = [];
       rows = pack.list1.map(function (rec) {
         var key = rec.art.toLowerCase().replace(/\s/g, "");
@@ -1192,9 +1312,9 @@
     /* ---- результат сканирования отдельным файлом ---- */
 
     function scanCsv() {
-      var lines = ["Коробка;ШК товара;Артикул;Количество;Паллет"];
+      var lines = ["Коробка;ШК товара;Артикул;Количество;Паллет;ШК паллеты"];
       rows.forEach(function (r, i) {
-        lines.push([i + 1, r.shk, r.art || "", r.qty, r.pallet].join(";"));
+        lines.push([i + 1, r.shk, r.art || "", r.qty, r.pallet, r.palShk || palletShk(r.pallet) || ""].join(";"));
       });
       return "﻿" + lines.join("\r\n") + "\r\n";
     }
@@ -1216,7 +1336,8 @@
           shk: p[1].trim(),
           art: p[2].trim(),
           qty: isNaN(qty) ? "" : qty,
-          pallet: parseInt(p[4], 10) || 1
+          pallet: parseInt(p[4], 10) || 1,
+          palShk: (p[5] || "").trim()
         });
       });
       return out;
@@ -1341,6 +1462,24 @@
       e.target.value = "";
     });
 
+    el("goPrev").addEventListener("click", function () { el("filePrev").click(); });
+
+    el("filePrev").addEventListener("change", function (e) {
+      if (!e.target.files.length) return;
+      var f = e.target.files[0];
+      f.text().then(function (text) {
+        var list = importScanCsv(text);
+        if (!list.length) { showMessage("err", "Файл не распознан", "Нужен файл результата сканирования, который выдал этот инструмент."); return; }
+        var before = rows.length;
+        rows = list.concat(rows);                       // прошлые коробки идут первыми
+        renderList();
+        showMessage("ok", "Прошлый результат подгружен",
+          "Было внесено сегодня: " + before + ", добавлено из файла: " + list.length +
+          ". Всего коробок: " + rows.length + ". Следующая коробка - номер " + (rows.length + 1) + ".");
+      })["catch"](function () { showMessage("err", "Файл не прочитан", "Попробуйте ещё раз."); });
+      e.target.value = "";
+    });
+
     el("goImport").addEventListener("click", function () { el("fileScan").click(); });
     el("fileScan").addEventListener("change", function (e) {
       if (!e.target.files.length) return;
@@ -1348,17 +1487,31 @@
       f.text().then(function (text) {
         var list = importScanCsv(text);
         if (!list.length) { showMessage("err", "Файл не распознан", "Ожидался файл результата сканирования (csv) из телефона."); return; }
-        rows = list;
+        var add = rows.length > 0 && window.confirm("Уже внесено коробок: " + rows.length +
+          ". ОК - добавить загружаемые к ним (сборка по частям). Отмена - заменить всё содержимым файла.");
+        rows = add ? rows.concat(list) : list;
         screen("scan");
         renderList();
-        showMessage("ok", "Результат загружен", "Коробок: " + rows.length + ". Проверьте список и нажмите «Сохранить файл для Ozon».");
+        showMessage("ok", "Результат загружен",
+          (add ? "Добавлено коробок: " + list.length + ". Всего: " + rows.length : "Коробок: " + rows.length) +
+          ". Проверьте список и нажмите «Сохранить файл для Ozon».");
       })["catch"](function () { showMessage("err", "Файл не прочитан", "Попробуйте отправить его с телефона ещё раз."); });
       e.target.value = "";
     });
     el("backBtn").addEventListener("click", function () { screen("load"); showMessage(null); });
 
     el("palletInput").addEventListener("input", function () { refreshHead(); saveProgress(); });
-    el("shkInput").addEventListener("input", refreshFound);
+    el("shkInput").addEventListener("input", function () {
+      var box = el("shkInput"), raw = box.value;
+      if (raw.length > 20 || /\s/.test(raw)) {
+        var only = cleanScan(raw);
+        if (only && only !== raw) {
+          box.value = only;
+          showMessage("ok", "Оставлен только штрихкод", "Из распознанного текста взят код " + only + ".");
+        }
+      }
+      refreshFound();
+    });
     el("shkInput").addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); if (el("qtyInput").value) addRow(); else el("qtyInput").focus(); }
     });
@@ -1383,6 +1536,11 @@
     if (canShareFiles()) el("shareBtn").classList.remove("hidden");
     el("camBtn").addEventListener("click", openCamera);
     el("camClose").addEventListener("click", closeCamera);
+    el("camTorch").addEventListener("click", toggleTorch);
+    el("camManual").addEventListener("click", function () {
+      closeCamera();
+      el("shkInput").focus();
+    });
 
     /* ---- запуск ---- */
 
