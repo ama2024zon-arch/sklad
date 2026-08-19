@@ -175,10 +175,37 @@
         <div class="tile"><span class="l">Паллет</span><span class="v" id="sumPallets">0</span></div>
       </div>
       <div class="row">
-        <button type="button" class="primary" id="goScan">Сканировать здесь</button>
-        <button type="button" id="goPack">Собрать для телефона</button>
+        <button type="button" class="primary" id="goLink">Ссылка для телефона</button>
+        <button type="button" id="goScan">Сканировать здесь</button>
       </div>
-      <button type="button" id="goList1" class="hidden">Заполнить из Лист1 (ручная перепись)</button>
+      <button type="button" id="goList1" class="hidden">Заполнить из ручной переписи</button>
+      <div class="row">
+        <button type="button" id="goManualFile">Заполнить из отдельного файла</button>
+        <button type="button" id="goImport">Загрузить результат сканирования</button>
+      </div>
+      <button type="button" id="goPack">Файл для телефона (без интернета)</button>
+      <input id="fileScan" type="file" accept=".csv,text/csv" class="hidden">
+      <input id="fileManual" type="file" accept=".xlsx,.csv,.txt" class="hidden">
+    </div>
+
+    <div id="linkBox" class="card hidden" style="margin-top:14px">
+      <div id="siteAsk" class="hidden">
+        <label>Адрес страницы в интернете
+          <input id="siteInput" type="url" placeholder="https://логин.github.io/sklad/scan.html">
+        </label>
+        <p class="sub" style="margin:8px 0 0">Ссылку для телефона можно сделать только от адреса в интернете - с адреса файла на компьютере телефон ничего не откроет. Введите адрес один раз, он запомнится.</p>
+        <button type="button" id="siteSave" style="margin-top:10px">Сохранить адрес</button>
+      </div>
+      <div id="linkReady" class="hidden">
+        <label>Ссылка для телефона
+          <textarea id="linkText" readonly rows="4" style="font-family:var(--mono);font-size:12.5px;width:100%;padding:10px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--panel-2);color:var(--ink);resize:vertical"></textarea>
+        </label>
+        <div class="row" style="margin-top:10px">
+          <button type="button" class="primary" id="copyLink">Скопировать ссылку</button>
+          <button type="button" id="shareLink" class="hidden">Отправить ссылку</button>
+        </div>
+        <p class="sub" id="linkNote" style="margin:8px 0 0"></p>
+      </div>
     </div>
   </section>
 
@@ -569,12 +596,22 @@
             var shared = sharedStrings(p[0]), map = sheetMap(zip, p[1], p[2]);
             var gmPath = map["Состав ГМ поставки"];
             var palPath = map["Список транспортного ГМ"];
-            var l1Path = map["Лист1"] || map["Лист 1"];
             if (!gmPath) throw new Error("В файле нет листа «Состав ГМ поставки».");
             if (!palPath) throw new Error("В файле нет листа «Список транспортного ГМ».");
-            return Promise.all([entryText(zip, gmPath), entryText(zip, palPath), l1Path ? entryText(zip, l1Path) : null])
+
+            // перепись коробов ищем на всех прочих листах - имя листа роли не играет
+            var skip = { "Состав ГМ поставки": 1, "Список транспортного ГМ": 1, "Инструкция": 1 };
+            var others = Object.keys(map).filter(function (n) { return !skip[n]; });
+            return Promise.all([entryText(zip, gmPath), entryText(zip, palPath)]
+              .concat(others.map(function (n) { return entryText(zip, map[n]); })))
               .then(function (x) {
                 var gm = readSheet(x[0], shared), pal = readSheet(x[1], shared);
+                var bestList = [], bestSheet = "";
+                for (var oi = 0; oi < others.length; oi++) {
+                  if (!x[2 + oi]) continue;
+                  var recs = parseManual(sheetToRows(readSheet(x[2 + oi], shared)));
+                  if (recs.length > bestList.length) { bestList = recs; bestSheet = others[oi]; }
+                }
                 var boxes = [];
                 for (var r = 2; r <= gm.maxRow; r++) {
                   var shk = cellText(gm, r, 6);
@@ -585,41 +622,120 @@
                   var v = cellText(pal, pr, 1);
                   if (v) pallets.push(v);
                 }
-                var list1 = x[2] ? parseList1(readSheet(x[2], shared)) : [];
                 return {
                   bytes: bytes, name: file.name, gmPath: gmPath, gm: gm,
-                  boxes: boxes, pallets: pallets, list1: list1
+                  boxes: boxes, pallets: pallets, list1: bestList, list1Sheet: bestSheet
                 };
               });
           });
       });
     }
 
-    /** Лист1: строки «номер=артикул=количество» + маркеры «---Паллет №N---» */
-    function parseList1(sheet) {
-      var out = [], pallet = 1;
+    /** лист -> массив строк, каждая строка - массив непустых значений ячеек */
+    function sheetToRows(sheet) {
+      var out = [];
       for (var r = 1; r <= sheet.maxRow; r++) {
         var row = sheet.rows[r];
-        if (!row) continue;
-        var text = "";
+        if (!row) { out.push([]); continue; }
+        var cells = [];
         for (var c = 1; c <= sheet.maxCol; c++) {
-          if (row[c] && row[c].v) { text = row[c].v; }
+          if (row[c] && String(row[c].v).trim()) cells.push(String(row[c].v).trim());
         }
-        text = String(text).trim();
-        if (!text) continue;
-        if (text.indexOf("=") < 0) {
-          var m = text.match(/№\s*(\d+)/);
-          if (m && text.toLowerCase().indexOf("конец") < 0) pallet = parseInt(m[1], 10);
-          continue;
-        }
-        var parts = text.split("=");
-        out.push({
-          num: parts[0].trim(),
-          art: (parts[1] || "").trim(),
-          qty: (parts[2] || "").trim(),
-          pallet: pallet
-        });
+        out.push(cells);
       }
+      return out;
+    }
+
+    function isArticle(s) {
+      return /[0-9]/.test(s) && /^[0-9A-Za-zА-Яа-яЁё .\-_/]+$/.test(s) && !/^\d+([.,]\d+)?$/.test(s);
+    }
+
+    function isCount(s) {
+      return /^\d+([.,]\d+)?$/.test(String(s).trim());
+    }
+
+    /** номер паллеты из строки-разделителя: «---Паллет №2---», «паллета 2», «Palette 3» */
+    function palletMarker(text) {
+      var t = String(text).toLowerCase();
+      if (t.indexOf("=") > -1) return null;
+      if (t.indexOf("паллет") < 0 && t.indexOf("палет") < 0 && t.indexOf("паллета") < 0) return null;
+      if (t.indexOf("конец") > -1) return null;         // «конец паллет №1» - это ещё та же паллета
+      var m = t.match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    }
+
+    /**
+     * Ручная перепись коробов в любом виде:
+     *   «1=402466лимон-1=27», «402466лимон-1=27», а также таблицей по столбцам
+     *   (артикул и количество в соседних ячейках, номер паллеты - отдельным столбцом).
+     */
+    function parseManual(rows) {
+      var out = [], pallet = 1, cols = null;
+
+      var header = function (cells) {
+        var idx = { art: -1, qty: -1, pal: -1 };
+        cells.forEach(function (v, i) {
+          var t = v.toLowerCase();
+          if (idx.art < 0 && t.indexOf("артикул") > -1) idx.art = i;
+          if (idx.qty < 0 && (t.indexOf("кол-во") > -1 || t.indexOf("колво") > -1 || t.indexOf("количество") > -1 || t.indexOf("шт") === 0)) idx.qty = i;
+          if (idx.pal < 0 && (t.indexOf("паллет") > -1 || t.indexOf("палет") > -1)) idx.pal = i;
+        });
+        return (idx.art > -1 && idx.qty > -1) ? idx : null;
+      };
+
+      rows.forEach(function (cells) {
+        if (!cells || !cells.length) return;
+        var joined = cells.join(" ");
+
+        // шапка таблицы: запоминаем, в каких столбцах что лежит
+        var h = header(cells);
+        if (h && joined.indexOf("=") < 0) { cols = h; return; }
+
+        // строка-разделитель паллеты
+        var mark = palletMarker(joined);
+        if (mark !== null && joined.indexOf("=") < 0) { pallet = mark; return; }
+
+        // вариант «всё в одной ячейке через =»
+        var eq = null;
+        for (var i = 0; i < cells.length; i++) {
+          if (cells[i].indexOf("=") > -1) { eq = cells[i]; break; }
+        }
+        if (eq) {
+          var p = eq.split("=").map(function (x) { return x.trim(); });
+          if (p.length >= 3) out.push({ num: p[0], art: p[1], qty: p[2], pallet: pallet });
+          else if (p.length === 2 && isArticle(p[0])) out.push({ num: String(out.length + 1), art: p[0], qty: p[1], pallet: pallet });
+          else if (p.length === 2 && /^\d+$/.test(p[0]) && p[1]) out.push({ num: p[0], art: p[1], qty: "", pallet: pallet });
+          return;
+        }
+
+        // таблица с известной шапкой
+        if (cols) {
+          var artC = cells[cols.art], qtyC = cells[cols.qty];
+          if (artC && isArticle(artC)) {
+            var palC = cols.pal > -1 ? parseInt(cells[cols.pal], 10) : NaN;
+            if (!isNaN(palC) && palC > 0) pallet = palC;
+            out.push({ num: String(out.length + 1), art: artC, qty: isCount(qtyC) ? qtyC : "", pallet: pallet });
+          }
+          return;
+        }
+
+        // таблица без шапки: артикул, за ним количество, следом (если есть) номер паллеты
+        var artIdx = -1;
+        for (var j = 0; j < cells.length; j++) {
+          if (isArticle(cells[j]) && !/^\d+$/.test(cells[j])) { artIdx = j; break; }
+        }
+        if (artIdx < 0) return;
+        var qty = null, pal = null;
+        for (var k = artIdx + 1; k < cells.length; k++) {
+          if (!isCount(cells[k])) continue;
+          if (qty === null) qty = cells[k];
+          else if (pal === null) pal = cells[k];
+        }
+        if (qty === null) return;
+        var palNum = parseInt(pal, 10);
+        if (!isNaN(palNum) && palNum > 0) pallet = palNum;
+        out.push({ num: String(out.length + 1), art: cells[artIdx], qty: qty, pallet: pallet });
+      });
       return out;
     }
 
@@ -656,7 +772,8 @@
       el("loadSummary").classList.remove("hidden");
       el("goList1").classList.toggle("hidden", !(raw2.list1 && raw2.list1.length));
       if (raw2.list1 && raw2.list1.length) {
-        el("goList1").textContent = "Заполнить из Лист1 (" + raw2.list1.length + " коробок)";
+        el("goList1").textContent = "Заполнить из переписи: " + raw2.list1.length + " коробок" +
+          (raw2.list1Sheet ? " (лист «" + raw2.list1Sheet + "»)" : "");
       }
     }
 
@@ -853,19 +970,38 @@
       } catch (e) { return false; }
     }
 
+    function deliver(blob, fname, viaShare) {
+      if (viaShare && navigator.share) {
+        try {
+          var file = new File([blob], fname, { type: blob.type });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: fname })["catch"](function () { saveBlob(blob, fname); });
+            return;
+          }
+        } catch (e) { /* ниже обычное сохранение */ }
+      }
+      saveBlob(blob, fname);
+    }
+
     function saveResult(viaShare) {
       if (!rows.length) { showMessage("warn", "Пока нечего сохранять", "Внесите хотя бы одну коробку."); return; }
+
+      // пришли по ссылке: полного файла Ozon здесь нет, отдаём результат сканирования
+      if (!pack.file2) {
+        deliver(new Blob([scanCsv()], { type: "text/csv" }), scanCsvName(), viaShare);
+        var noArt = rows.filter(function (r) { return !r.art; }).length;
+        showMessage(noArt ? "warn" : "ok", "Результат готов",
+          "Коробок: " + rows.length + (noArt ? ", из них без артикула: " + noArt : "") +
+          ". Отправьте файл на компьютер и загрузите там кнопкой «Загрузить результат сканирования» - получится файл для Ozon.");
+        return;
+      }
+
       var built = buildPatch(rows);
       el("saveBtn").disabled = true;
       el("shareBtn").disabled = true;
       rebuildFile2(pack.file2, pack.gmPath, pack.gm, built.patch).then(function (blob) {
         var fname = pack.file2Name.replace(/\.xlsx$/i, "") + "_заполнен.xlsx";
-        if (viaShare) {
-          var file = new File([blob], fname, { type: blob.type });
-          navigator.share({ files: [file], title: fname })["catch"](function () { saveBlob(blob, fname); });
-        } else {
-          saveBlob(blob, fname);
-        }
+        deliver(blob, fname, viaShare);
         var extra = pack.boxes.length - rows.length;
         var tail = extra > 0 ? " Коробок без содержимого осталось: " + extra + " - удалите лишние строки в кабинете." : "";
         if (built.problems.length) {
@@ -883,7 +1019,36 @@
       });
     }
 
-    /* ---- заполнение из Лист1 ---- */
+    /** перепись из отдельного файла: xlsx (любой лист), csv или txt */
+    function readManualFile(file) {
+      if (/\.(csv|txt)$/i.test(file.name)) {
+        return file.text().then(function (text) {
+          var rows = text.replace(/^﻿/, "").split(/\r\n|\n|\r/).map(function (line) {
+            return line.split(/[;\t]/).map(function (s) { return s.trim(); }).filter(Boolean);
+          });
+          return parseManual(rows);
+        });
+      }
+      return file.arrayBuffer().then(function (buf) {
+        var zip = readZip(buf);
+        return Promise.all([entryText(zip, "xl/sharedStrings.xml"), entryText(zip, "xl/workbook.xml"), entryText(zip, "xl/_rels/workbook.xml.rels")])
+          .then(function (p) {
+            var shared = sharedStrings(p[0]), map = sheetMap(zip, p[1], p[2]);
+            var names = Object.keys(map);
+            return Promise.all(names.map(function (n) { return entryText(zip, map[n]); })).then(function (texts) {
+              var best = [];
+              texts.forEach(function (t) {
+                if (!t) return;
+                var recs = parseManual(sheetToRows(readSheet(t, shared)));
+                if (recs.length > best.length) best = recs;
+              });
+              return best;
+            });
+          });
+      });
+    }
+
+    /* ---- заполнение из ручной переписи ---- */
 
     function fillFromList1() {
       if (rows.length && !window.confirm("Уже внесено коробок: " + rows.length + ". Заменить их данными из Лист1?")) return;
@@ -906,6 +1071,155 @@
       if (miss.length) parts.push("Без штрихкода (нет в файле №1): " + miss.length + " - " + miss.slice(0, 4).join(", ") + (miss.length > 4 ? "…" : "") + ".");
       if (noQty) parts.push("Без количества: " + noQty + ".");
       showMessage(miss.length || noQty ? "warn" : "ok", "Данные из Лист1 перенесены", parts.join(" ") + " Проверьте список и нажмите «Сохранить файл для Ozon».");
+    }
+
+    /* ---- ссылка для телефона: данные едут в адресе после #, на сервер не уходят ---- */
+
+    function deflate(bytes) {
+      if (typeof CompressionStream === "undefined") return Promise.resolve(null);
+      var s = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+      return new Response(s).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+    }
+
+    function inflate(bytes) {
+      var s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Response(s).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+    }
+
+    function b64url(bytes) {
+      return b64encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+
+    function unb64url(s) {
+      var t = s.replace(/-/g, "+").replace(/_/g, "/");
+      while (t.length % 4) t += "=";
+      return b64decode(t);
+    }
+
+    /** коробки чаще идут подряд - тогда достаточно первого номера и количества */
+    function packBoxes(boxes) {
+      if (!boxes.length) return { bl: [] };
+      var first = boxes[0];
+      if (/^\d+$/.test(first) && first.length < 17) return { bl: boxes };
+      for (var i = 1; i < boxes.length; i++) {
+        if (!/^\d+$/.test(boxes[i]) || boxes[i].length !== first.length) return { bl: boxes };
+        if (BigInt(boxes[i]) - BigInt(first) !== BigInt(i)) return { bl: boxes };
+      }
+      return { b0: first, bn: boxes.length };
+    }
+
+    function unpackBoxes(d) {
+      if (d.bl) return d.bl;
+      if (!d.b0) return [];
+      var out = [], start = BigInt(d.b0);
+      for (var i = 0; i < d.bn; i++) out.push(String(start + BigInt(i)));
+      return out;
+    }
+
+    var LINK_LIMIT = 3900;   // чтобы ссылка влезала в одно сообщение мессенджера
+
+    function buildLinkData(nameCut) {
+      var cat = [], seen = {};
+      Object.keys(pack.catalog.byBar).forEach(function (k) {
+        var r = pack.catalog.byBar[k];
+        if (seen[r.bar]) return;
+        seen[r.bar] = 1;
+        cat.push(nameCut ? [r.bar, r.art, (r.name || "").slice(0, nameCut)] : [r.bar, r.art]);
+      });
+      var d = { v: 1, n: pack.file2Name, c: cat, p: pack.pallets };
+      var b = packBoxes(pack.boxes);
+      if (b.bl) d.bl = b.bl; else { d.b0 = b.b0; d.bn = b.bn; }
+      return d;
+    }
+
+    function siteBase() {
+      if (location.protocol === "http:" || location.protocol === "https:") return location.href.split("#")[0];
+      try { return localStorage.getItem("supply-scan:site") || ""; } catch (e) { return ""; }
+    }
+
+    function makeLink() {
+      var base = siteBase();
+      el("linkBox").classList.remove("hidden");
+      if (!base) {
+        el("siteAsk").classList.remove("hidden");
+        el("linkReady").classList.add("hidden");
+        try { el("siteInput").value = localStorage.getItem("supply-scan:site") || ""; } catch (e) { }
+        return;
+      }
+      el("siteAsk").classList.add("hidden");
+
+      // подбираем самый подробный вариант, который влезает в лимит
+      var cuts = [24, 14, 10, 0], idx = 0;
+      var attempt = function () {
+        var cut = cuts[idx];
+        var json = JSON.stringify(buildLinkData(cut));
+        var bytes = new TextEncoder().encode(json);
+        deflate(bytes).then(function (z) {
+          var payload = z ? ("1" + b64url(z)) : ("0" + b64url(bytes));
+          var url = base.split("#")[0] + "#d=" + payload;
+          if (url.length > LINK_LIMIT && idx < cuts.length - 1) { idx++; attempt(); return; }
+          showLink(url, cut);
+        })["catch"](function () { showMessage("err", "Ссылка не собралась", "Попробуйте кнопку «Файл для телефона»."); });
+      };
+      attempt();
+    }
+
+    function showLink(url, cut) {
+      el("linkReady").classList.remove("hidden");
+      el("linkText").value = url;
+      var note = "Внутри ссылки: справочник штрихкодов, " + pack.boxes.length + " коробок и " + pack.pallets.length +
+        " паллет. Данные хранятся в самой ссылке и на сервер не отправляются." +
+        (cut ? "" : " Названия товаров не поместились - на телефоне будет виден артикул.");
+      if (url.length > LINK_LIMIT) note += " Ссылка длинная (" + url.length + " символов) - если мессенджер её обрежет, отправьте через почту или заметки.";
+      note += " После сканирования телефон вернёт файл результата - загрузите его здесь кнопкой «Загрузить результат сканирования».";
+      el("linkNote").textContent = note;
+      el("shareLink").classList.toggle("hidden", !(navigator.share));
+      showMessage("ok", "Ссылка готова", "Скопируйте её и отправьте на телефон.");
+    }
+
+    function readLinkData(hash) {
+      var m = /[#&]d=([^&]+)/.exec(hash || "");
+      if (!m) return Promise.resolve(null);
+      var payload = m[1], mode = payload.charAt(0), body = payload.slice(1);
+      var bytes;
+      try { bytes = unb64url(body); } catch (e) { return Promise.reject(new Error("Ссылка повреждена - попросите прислать её заново.")); }
+      var step = (mode === "1") ? inflate(bytes) : Promise.resolve(bytes);
+      return step.then(function (raw) {
+        return JSON.parse(new TextDecoder("utf-8").decode(raw));
+      });
+    }
+
+    /* ---- результат сканирования отдельным файлом ---- */
+
+    function scanCsv() {
+      var lines = ["Коробка;ШК товара;Артикул;Количество;Паллет"];
+      rows.forEach(function (r, i) {
+        lines.push([i + 1, r.shk, r.art || "", r.qty, r.pallet].join(";"));
+      });
+      return "﻿" + lines.join("\r\n") + "\r\n";
+    }
+
+    function scanCsvName() {
+      return "Скан " + (pack.file2Name || "поставка").replace(/\.xlsx$/i, "") + ".csv";
+    }
+
+    function importScanCsv(text) {
+      var clean = String(text).replace(/^﻿/, "");
+      var lines = clean.split(/\r\n|\n|\r/).filter(function (l) { return l.trim(); });
+      var out = [];
+      lines.forEach(function (line, i) {
+        var p = line.split(";");
+        if (i === 0 && !/^\d+$/.test(p[0].trim())) return;      // шапка
+        if (p.length < 5) return;
+        var qty = parseInt(p[3], 10);
+        out.push({
+          shk: p[1].trim(),
+          art: p[2].trim(),
+          qty: isNaN(qty) ? "" : qty,
+          pallet: parseInt(p[4], 10) || 1
+        });
+      });
+      return out;
     }
 
     /* ---- сборка версии для телефона ---- */
@@ -977,6 +1291,70 @@
     el("goPack").addEventListener("click", buildPhoneFile);
     el("goList1").addEventListener("click", fillFromList1);
     el("goList1Scan").addEventListener("click", fillFromList1);
+    el("goLink").addEventListener("click", makeLink);
+
+    el("siteSave").addEventListener("click", function () {
+      var v = el("siteInput").value.trim();
+      if (!/^https?:\/\//i.test(v)) { showMessage("warn", "Нужен полный адрес", "Он должен начинаться с https:// - скопируйте его из адресной строки браузера."); return; }
+      try { localStorage.setItem("supply-scan:site", v); } catch (e) { }
+      showMessage(null);
+      makeLink();
+    });
+
+    el("copyLink").addEventListener("click", function () {
+      var t = el("linkText");
+      t.select();
+      var ok = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t.value).then(function () {
+          showMessage("ok", "Ссылка скопирована", "Отправьте её на телефон - например, себе в мессенджер.");
+        })["catch"](function () { showMessage("warn", "Скопировать не вышло", "Выделите текст ссылки и скопируйте вручную."); });
+        return;
+      }
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      showMessage(ok ? "ok" : "warn", ok ? "Ссылка скопирована" : "Скопировать не вышло",
+        ok ? "Отправьте её на телефон." : "Выделите текст ссылки и скопируйте вручную.");
+    });
+
+    el("shareLink").addEventListener("click", function () {
+      if (navigator.share) navigator.share({ title: "Сборка поставки", url: el("linkText").value })["catch"](function () { });
+    });
+
+    el("goManualFile").addEventListener("click", function () {
+      if (!pack) { showMessage("warn", "Сначала загрузите оба файла", "Перепись накладывается на шаблон поставки - без него не с чем работать."); return; }
+      el("fileManual").click();
+    });
+
+    el("fileManual").addEventListener("change", function (e) {
+      if (!e.target.files.length) return;
+      var f = e.target.files[0];
+      showMessage(null);
+      readManualFile(f).then(function (list) {
+        if (!list.length) {
+          showMessage("err", "Перепись не распознана",
+            "Ожидались строки вида «1=артикул=количество» или столбцы «артикул» и «количество». Пришлите файл - настрою под ваш вид.");
+          return;
+        }
+        pack.list1 = list;
+        fillFromList1();
+      })["catch"](function (err) { showMessage("err", "Файл не прочитан", (err && err.message) || "Неизвестный формат."); });
+      e.target.value = "";
+    });
+
+    el("goImport").addEventListener("click", function () { el("fileScan").click(); });
+    el("fileScan").addEventListener("change", function (e) {
+      if (!e.target.files.length) return;
+      var f = e.target.files[0];
+      f.text().then(function (text) {
+        var list = importScanCsv(text);
+        if (!list.length) { showMessage("err", "Файл не распознан", "Ожидался файл результата сканирования (csv) из телефона."); return; }
+        rows = list;
+        screen("scan");
+        renderList();
+        showMessage("ok", "Результат загружен", "Коробок: " + rows.length + ". Проверьте список и нажмите «Сохранить файл для Ozon».");
+      })["catch"](function () { showMessage("err", "Файл не прочитан", "Попробуйте отправить его с телефона ещё раз."); });
+      e.target.value = "";
+    });
     el("backBtn").addEventListener("click", function () { screen("load"); showMessage(null); });
 
     el("palletInput").addEventListener("input", function () { refreshHead(); saveProgress(); });
@@ -1032,8 +1410,32 @@
         })["catch"](function (err) { showMessage("err", "Данные не открылись", err.message); });
       } catch (e) {
         showMessage("err", "Данные не открылись", e.message);
-        console.log("pack: сбой", e);
       }
+    } else if (/[#&]d=/.test(location.hash)) {
+      readLinkData(location.hash).then(function (d) {
+        if (!d || !d.c) throw new Error("В ссылке нет данных поставки.");
+        var byBar = {}, byArt = {};
+        d.c.forEach(function (row) {
+          var rec = { bar: row[0], art: row[1], name: row[2] || "" };
+          byBar[String(rec.bar).trim().toLowerCase()] = rec;
+          byArt[String(rec.art).trim().toLowerCase().replace(/\s/g, "")] = rec;
+        });
+        pack = {
+          catalog: { byBar: byBar, byArt: byArt, goods: d.c.length },
+          boxes: unpackBoxes(d), pallets: d.p || [], list1: [],
+          file2: null, file2Name: d.n || "поставка.xlsx", gmPath: null, gm: null
+        };
+        el("subtitle").textContent = "Поставка «" + pack.file2Name + "»: коробок " + pack.boxes.length +
+          ", паллет " + pack.pallets.length + ". Данные пришли в ссылке, интернет дальше не нужен.";
+        el("saveBtn").textContent = "Сохранить результат";
+        el("shareBtn").textContent = "Отправить результат";
+        screen("scan");
+        if (loadProgress()) showMessage("ok", "Продолжаем с прошлого раза", "Восстановлено коробок: " + rows.length + ".");
+        renderList();
+      })["catch"](function (err) {
+        screen("load");
+        showMessage("err", "Ссылка не открылась", (err && err.message) || "Попросите прислать ссылку заново - возможно, она обрезалась при пересылке.");
+      });
     } else {
       screen("load");
     }
