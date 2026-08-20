@@ -120,6 +120,11 @@
   .item .q { font-weight: 700; font-variant-numeric: tabular-nums; }
   .item.bad { background: var(--warn-soft); }
   .item button { padding: 4px 8px; font-size: 13px; border-radius: 3px; }
+  .item.editing { grid-template-columns: 42px 1fr; align-items: start; background: var(--accent-soft); }
+  .edit-fields { display: flex; flex-direction: column; gap: 9px; padding: 4px 0 2px; }
+  .edit-fields input { font-size: 16px; padding: 9px 10px; }
+  .edit-actions { display: flex; gap: 8px; }
+  .edit-actions button { flex: 1; padding: 10px 12px; font-size: 15px; }
 
   .msg { padding: 11px 13px; border: 1px solid var(--line); border-left-width: 3px; border-radius: var(--radius); background: var(--panel); font-size: 14.5px; }
   .msg.err { border-left-color: var(--accent); background: var(--accent-soft); }
@@ -266,7 +271,6 @@
     <div class="row">
       <button type="button" class="primary" id="saveBtn">Сохранить файл для Ozon</button>
       <button type="button" id="shareBtn" class="hidden">Отправить файл</button>
-      <button type="button" id="undoBtn">Отменить последнюю</button>
     </div>
     <button type="button" id="goList1Scan" class="hidden">Заполнить из Лист1 (ручная перепись)</button>
     <button type="button" id="goPrev">Продолжить: подгрузить прошлый результат</button>
@@ -314,6 +318,7 @@
     var rows = [];        // [{shk, art, qty, pallet}]
     var raw1 = null, raw2 = null;
     var camStream = null, camStop = false;
+    var editIndex = null;
 
     /* ================= чтение xlsx ================= */
 
@@ -860,11 +865,27 @@
       var box = el("listBox"), html = "";
       for (var i = rows.length - 1; i >= 0; i--) {
         var r = rows[i];
-        html += '<div class="item' + (r.art ? "" : " bad") + '">' +
-          '<span class="n">' + (i + 1) + '</span>' +
-          '<span class="a">' + xmlEscape(r.art || "без артикула") + '<small>' + xmlEscape(r.shk) + ' · паллет ' + r.pallet + '</small></span>' +
-          '<span class="q">' + r.qty + '</span>' +
-          '<button type="button" data-del="' + i + '" title="Удалить">✕</button></div>';
+        if (i === editIndex) {
+          // коробку нельзя убрать - её можно только исправить: номер коробки жёстко
+          // привязан к штрихкоду грузового места, сдвиг испортил бы всю поставку
+          html += '<div class="item editing">' +
+            '<span class="n">' + (i + 1) + '</span>' +
+            '<div class="edit-fields">' +
+              '<label>ШК товара<input id="editShk" type="text" value="' + xmlEscape(r.shk) + '"></label>' +
+              '<label>Количество<input id="editQty" type="number" min="1" inputmode="numeric" value="' + xmlEscape(String(r.qty)) + '"></label>' +
+              '<label>Номер паллеты<input id="editPal" type="number" min="1" inputmode="numeric" value="' + xmlEscape(String(r.pallet)) + '"></label>' +
+              '<div class="edit-actions">' +
+                '<button type="button" class="primary" data-save="' + i + '">Готово</button>' +
+                '<button type="button" data-cancel="1">Отмена</button>' +
+              '</div>' +
+            '</div></div>';
+        } else {
+          html += '<div class="item' + (r.art ? "" : " bad") + '">' +
+            '<span class="n">' + (i + 1) + '</span>' +
+            '<span class="a">' + xmlEscape(r.art || "без артикула") + '<small>' + xmlEscape(r.shk) + ' · паллет ' + r.pallet + '</small></span>' +
+            '<span class="q">' + r.qty + '</span>' +
+            '<button type="button" data-edit="' + i + '" title="Изменить">✎</button></div>';
+        }
       }
       box.innerHTML = html || '<div style="padding:16px;color:var(--muted);font-size:14px">Пока пусто - отсканируйте первую коробку</div>';
       var units = rows.reduce(function (s, r) { return s + (Number(r.qty) || 0); }, 0);
@@ -1405,7 +1426,7 @@
 
     el("goScan").addEventListener("click", function () {
       screen("scan");
-      if (loadProgress()) showMessage("ok", "Продолжаем с прошлого раза", "Восстановлено коробок: " + rows.length + ". Чтобы начать заново, удалите строки крестиком.");
+      if (loadProgress()) showMessage("ok", "Продолжаем с прошлого раза", "Восстановлено коробок: " + rows.length + ".");
       renderList();
       focusScan();
     });
@@ -1519,18 +1540,30 @@
       if (e.key === "Enter") { e.preventDefault(); addRow(); }
     });
     el("addBtn").addEventListener("click", addRow);
-    el("undoBtn").addEventListener("click", function () {
-      if (!rows.length) return;
-      rows.pop();
-      renderList();
-      showMessage(null);
-    });
     el("listBox").addEventListener("click", function (e) {
-      var idx = e.target.getAttribute && e.target.getAttribute("data-del");
-      if (idx === null || idx === undefined) return;
-      rows.splice(parseInt(idx, 10), 1);
-      renderList();
+      var t = e.target;
+      if (!t || !t.getAttribute) return;
+      var edit = t.getAttribute("data-edit");
+      if (edit !== null) { editIndex = parseInt(edit, 10); renderList(); return; }
+      if (t.getAttribute("data-cancel")) { editIndex = null; renderList(); showMessage(null); return; }
+      var save = t.getAttribute("data-save");
+      if (save !== null) saveEdit(parseInt(save, 10));
     });
+
+    function saveEdit(i) {
+      var shk = cleanScan(el("editShk").value);
+      var qty = parseInt(el("editQty").value, 10);
+      var pal = parseInt(el("editPal").value, 10);
+      if (!shk || shk.length < 6) { showMessage("warn", "Штрихкод не годится", "В поле «" + shk + "». Впишите код целиком."); return; }
+      if (!qty || qty < 1) { showMessage("warn", "Нужно количество", "Впишите, сколько штук в коробке."); return; }
+      if (!pal || pal < 1 || !palletShk(pal)) { showMessage("warn", "Нет такой паллеты", "В файле их " + pack.pallets.length + "."); return; }
+      if (!lookup(shk) && !window.confirm("Штрихкода «" + shk + "» нет в списке товаров этой поставки. Всё равно записать?")) return;
+      var hit = lookup(shk);
+      rows[i] = { shk: shk, art: hit ? hit.art : "", qty: qty, pallet: pal, palShk: palletShk(pal) };
+      editIndex = null;
+      renderList();
+      showMessage("ok", "Коробка " + (i + 1) + " исправлена", (hit ? hit.art : "без артикула") + ", " + qty + " шт, паллет " + pal + ".");
+    }
     el("saveBtn").addEventListener("click", function () { saveResult(false); });
     el("shareBtn").addEventListener("click", function () { saveResult(true); });
     if (canShareFiles()) el("shareBtn").classList.remove("hidden");
